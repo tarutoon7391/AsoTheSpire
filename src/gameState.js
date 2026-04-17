@@ -1,5 +1,8 @@
 // ルームごとのゲーム状態を管理するクラス
 
+const { createStatusState } = require("./status");
+const { createStarterDeckIds } = require("./cards");
+
 /**
  * マルチプレイ用のゲーム状態を保持するクラス。
  * バトルに必要なプレイヤー・敵・フェーズ情報をすべて管理する。
@@ -11,14 +14,15 @@ class GameState {
   constructor(roomId) {
     this.roomId = roomId;
 
-    // socketId => { name, hp, maxHp, block, hand, deck, discard }
+    // socketId => { name, hp, maxHp, block, hand, deck, discard, energy, maxEnergy, status, damageTakenThisTurn, powers }
     this.players = new Map();
 
     this.enemy = {
       hp: 0,
       maxHp: 0,
       block: 0,
-      intent: null
+      intent: { type: "attack", value: 10 },
+      status: createStatusState()
     };
 
     // 'player' | 'enemy'
@@ -49,9 +53,66 @@ class GameState {
       maxHp: 0,
       block: 0,
       hand: [],
-      deck: [],
-      discard: []
+      deck: createStarterDeckIds(),
+      discard: [],
+      energy: 3,
+      maxEnergy: 3,
+      status: createStatusState(),
+      damageTakenThisTurn: 0,
+      powers: {}
     });
+  }
+
+  /**
+   * 古いセーブデータとの互換性を保つためのマイグレーション処理。
+   * 新しく追加されたフィールドが存在しない場合はデフォルト値で補完する。
+   * @param {object} playerData - マイグレーション対象のプレイヤーデータ
+   * @returns {object} マイグレーション済みのプレイヤーデータ
+   */
+  static migratePlayerData(playerData) {
+    if (!Array.isArray(playerData.hand)) playerData.hand = [];
+    if (!Array.isArray(playerData.deck)) playerData.deck = createStarterDeckIds();
+    if (!Array.isArray(playerData.discard)) playerData.discard = [];
+    if (playerData.energy === undefined) playerData.energy = 3;
+    if (playerData.maxEnergy === undefined) playerData.maxEnergy = 3;
+    if (!playerData.status || typeof playerData.status !== "object") {
+      playerData.status = createStatusState();
+    } else {
+      // 個別フィールドが欠けている場合もデフォルト値で補完する
+      const defaults = createStatusState();
+      for (const key of Object.keys(defaults)) {
+        if (playerData.status[key] === undefined) {
+          playerData.status[key] = defaults[key];
+        }
+      }
+    }
+    if (playerData.damageTakenThisTurn === undefined) playerData.damageTakenThisTurn = 0;
+    if (!playerData.powers || typeof playerData.powers !== "object") {
+      playerData.powers = {};
+    }
+    return playerData;
+  }
+
+  /**
+   * 敵データに欠けているフィールドをデフォルト値で補完する。
+   * @param {object} enemyData - マイグレーション対象の敵データ
+   * @returns {object} マイグレーション済みの敵データ
+   */
+  static migrateEnemyData(enemyData) {
+    if (!enemyData.status || typeof enemyData.status !== "object") {
+      enemyData.status = createStatusState();
+    } else {
+      const defaults = createStatusState();
+      for (const key of Object.keys(defaults)) {
+        if (enemyData.status[key] === undefined) {
+          enemyData.status[key] = defaults[key];
+        }
+      }
+    }
+    if (!enemyData.intent || typeof enemyData.intent !== "object") {
+      enemyData.intent = { type: "attack", value: 10 };
+    }
+    return enemyData;
   }
 
   /**
@@ -89,7 +150,20 @@ class GameState {
   toJSON() {
     const players = {};
     this.players.forEach((playerData, socketId) => {
-      players[socketId] = { ...playerData };
+      players[socketId] = {
+        name: playerData.name,
+        hp: playerData.hp,
+        maxHp: playerData.maxHp,
+        block: playerData.block,
+        hand: [...playerData.hand],
+        deck: [...playerData.deck],
+        discard: [...playerData.discard],
+        energy: playerData.energy,
+        maxEnergy: playerData.maxEnergy,
+        status: { ...playerData.status },
+        damageTakenThisTurn: playerData.damageTakenThisTurn,
+        powers: { ...playerData.powers }
+      };
     });
 
     const selectedCards = {};
@@ -100,7 +174,7 @@ class GameState {
     return {
       roomId: this.roomId,
       players,
-      enemy: { ...this.enemy },
+      enemy: { ...this.enemy, status: { ...this.enemy.status } },
       turn: this.turn,
       phase: this.phase,
       selectedCards,

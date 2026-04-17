@@ -10,7 +10,7 @@ const ENEMY_INTENT = "attack";
 /**
  * バトルを初期化する。
  * 全プレイヤーと敵のHPを固定値でセットし、フェーズを 'selecting' にする。
- * @param {import('./gameState')} gameState
+ * @param {GameState} gameState
  */
 function initBattle(gameState) {
   gameState.players.forEach((player) => {
@@ -38,7 +38,7 @@ function initBattle(gameState) {
 /**
  * カード選択フェーズを開始する。
  * phaseを 'selecting' に変更し、選択状態をリセットする。
- * @param {import('./gameState')} gameState
+ * @param {GameState} gameState
  */
 function startSelectPhase(gameState) {
   gameState.phase = "selecting";
@@ -48,7 +48,7 @@ function startSelectPhase(gameState) {
 
 /**
  * プレイヤーがカードを選択する。
- * @param {import('./gameState')} gameState
+ * @param {GameState} gameState
  * @param {string} socketId - 選択したプレイヤーのソケットID
  * @param {string} cardId - 選択したカードのID
  */
@@ -61,7 +61,7 @@ function playerSelectCard(gameState, socketId, cardId) {
 
 /**
  * プレイヤーが準備完了を宣言する。
- * @param {import('./gameState')} gameState
+ * @param {GameState} gameState
  * @param {string} socketId - 準備完了したプレイヤーのソケットID
  * @returns {boolean} 全員が準備完了かどうか
  */

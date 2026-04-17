@@ -7,7 +7,7 @@ const path = require("path");
 const { Server } = require("socket.io");
 const RoomManager = require("./src/roomManager");
 const GameState = require("./src/gameState");
-const { initBattle, playerSelectCard, playerReady } = require("./src/gameLogic");
+const { initBattle, playerSelectCard, playerReady, resolveCards } = require("./src/gameLogic");
 
 const app = express();
 const server = http.createServer(app);
@@ -131,8 +131,14 @@ io.on("connection", (socket) => {
     const allReady = playerReady(gs, socket.id);
 
     if (allReady) {
+      // まず resolving フェーズをブロードキャストして全クライアントに通知する
       gs.phase = "resolving";
+      io.to(roomId).emit("game_state_update", gs.toJSON());
       console.log(`ルーム ${roomId} の全員が準備完了 → resolving フェーズへ`);
+
+      // カード効果を一括解決してフェーズを更新する
+      resolveCards(gs);
+      console.log(`ルーム ${roomId} の resolveCards 完了 → ${gs.phase} フェーズへ`);
     }
 
     io.to(roomId).emit("game_state_update", gs.toJSON());

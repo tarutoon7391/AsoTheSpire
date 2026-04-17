@@ -140,6 +140,13 @@
     }
   }
 
+  // --- battle_redirect 受信時のリダイレクト処理 ---
+  socket.on("battle_redirect", function (data) {
+    if (data && data.redirect) {
+      window.location.href = data.redirect;
+    }
+  });
+
   // --- game_state_update 受信時の UI 更新 ---
   socket.on("game_state_update", function (gameState) {
     console.log("[game_state_update]", JSON.stringify(gameState, null, 2));

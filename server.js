@@ -100,6 +100,8 @@ io.on("connection", (socket) => {
 
     console.log(`ルーム ${roomId} のバトルを開始`);
     io.to(roomId).emit("game_state_update", gs.toJSON());
+    // ルーム全員を game.html?mode=multi にリダイレクトさせる
+    io.to(roomId).emit("battle_redirect", { redirect: "/game.html?mode=multi" });
   });
 
   // select_card イベント：プレイヤーがカードを選択する

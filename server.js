@@ -7,7 +7,7 @@ const path = require("path");
 const { Server } = require("socket.io");
 const RoomManager = require("./src/roomManager");
 const GameState = require("./src/gameState");
-const { initBattle, playerSelectCard, playerReady, resolveCards } = require("./src/gameLogic");
+const { initBattle, playerSelectCard, playerReady, resolveCards, enemyAttack } = require("./src/gameLogic");
 
 const app = express();
 const server = http.createServer(app);
@@ -144,6 +144,44 @@ io.on("connection", (socket) => {
     }
 
     io.to(roomId).emit("game_state_update", gs.toJSON());
+  });
+
+  // end_turn イベント：プレイヤーがターン終了を宣言する
+  // 全員揃ったら resolveCards → 500ms待機 → enemyAttack を実行する
+  // payload: { roomId: string }
+  socket.on("end_turn", (payload) => {
+    const roomId = String(payload?.roomId || "").trim();
+    const gs = gameStates.get(roomId);
+
+    if (!gs) {
+      return;
+    }
+
+    // 準備完了プレイヤーに追加する
+    gs.readyPlayers.add(socket.id);
+
+    // 待機人数を全員に通知する
+    io.to(roomId).emit("game_state_update", gs.toJSON());
+
+    // 全員揃った場合に解決処理を実行する
+    if (gs.allPlayersReady()) {
+      // resolving フェーズをブロードキャストする
+      gs.phase = "resolving";
+      io.to(roomId).emit("game_state_update", gs.toJSON());
+      console.log(`ルーム ${roomId} の全員がターン終了 → resolving フェーズへ`);
+
+      // カード効果を解決する
+      resolveCards(gs);
+      io.to(roomId).emit("game_state_update", gs.toJSON());
+      console.log(`ルーム ${roomId} の resolveCards 完了 → ${gs.phase} フェーズへ`);
+
+      // 500ms 待機後に敵の攻撃フェーズを実行する
+      setTimeout(() => {
+        enemyAttack(gs);
+        console.log(`ルーム ${roomId} の enemyAttack 完了 → ${gs.phase} フェーズへ`);
+        io.to(roomId).emit("game_state_update", gs.toJSON());
+      }, 500);
+    }
   });
 });
 

@@ -156,8 +156,8 @@ class GameState {
         maxHp: playerData.maxHp,
         block: playerData.block,
         hand: [...playerData.hand],
-        deck: [...playerData.deck],
-        discard: [...playerData.discard],
+        deckCount: playerData.deck.length,
+        discardCount: playerData.discard.length,
         energy: playerData.energy,
         maxEnergy: playerData.maxEnergy,
         status: { ...playerData.status },
@@ -171,14 +171,24 @@ class GameState {
       selectedCards[socketId] = cardId;
     });
 
+    const enemy = this.enemy;
+
     return {
       roomId: this.roomId,
       players,
-      enemy: { ...this.enemy, status: { ...this.enemy.status } },
+      enemy: {
+        hp: enemy.hp,
+        maxHp: enemy.maxHp,
+        block: enemy.block,
+        intent: { ...enemy.intent },
+        status: { ...enemy.status }
+      },
       turn: this.turn,
       phase: this.phase,
       selectedCards,
-      readyPlayers: Array.from(this.readyPlayers)
+      readyPlayers: Array.from(this.readyPlayers),
+      readyCount: this.readyPlayers.size,
+      totalPlayers: this.players.size
     };
   }
 }

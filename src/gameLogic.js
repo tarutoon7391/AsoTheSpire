@@ -1,15 +1,94 @@
 // バトルの進行を管理する関数群
 
-// 仮の固定値
+const { CARD_LIBRARY, CARD_UPGRADE_LIBRARY } = require("./cards");
+const {
+  createStatusState,
+  addStatus,
+  calculateModifiedDamage,
+  calculateModifiedBlock,
+  applyEndOfTurnStatusEffects
+} = require("./status");
+
+// 固定値
 const PLAYER_HP = 70;
 const PLAYER_MAX_HP = 70;
 const ENEMY_HP = 50;
 const ENEMY_MAX_HP = 50;
-const ENEMY_INTENT = "attack";
+
+/**
+ * 配列をフィッシャー–イェーツシャッフルでランダムに並び替える（破壊的）。
+ * @param {Array} array
+ * @returns {Array}
+ */
+function shuffleArray(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+/**
+ * プレイヤーの山札からcount枚を手札に移動する。
+ * 山札が足りない場合は捨て札をシャッフルして山札に補充してから継続する。
+ * @param {object} player
+ * @param {number} count
+ */
+function drawCards(player, count) {
+  for (let i = 0; i < count; i++) {
+    if (player.deck.length === 0) {
+      if (player.discard.length === 0) {
+        // 山札も捨て札もない場合はドロー終了
+        break;
+      }
+      // 捨て札をシャッフルして山札に補充する
+      player.deck = shuffleArray([...player.discard]);
+      player.discard = [];
+    }
+    player.hand.push(player.deck.shift());
+  }
+}
+
+/**
+ * ブロックを考慮して対象にダメージを与える。
+ * 残ったダメージは damageTakenThisTurn に加算する。
+ * @param {object} target - ダメージを受けるオブジェクト（hp・block を持つ）
+ * @param {number} damage - 適用するダメージ量
+ * @param {boolean} [trackDamageTaken=false] - damageTakenThisTurn を更新するか
+ */
+function applyDamageToTarget(target, damage, trackDamageTaken) {
+  const blocked = Math.min(target.block, damage);
+  target.block -= blocked;
+  const actualDamage = damage - blocked;
+  target.hp = Math.max(0, target.hp - actualDamage);
+  if (trackDamageTaken && actualDamage > 0) {
+    target.damageTakenThisTurn = (target.damageTakenThisTurn || 0) + actualDamage;
+  }
+}
+
+/**
+ * カードID（文字列）とupgradedフラグからカード効果オブジェクトを取得する。
+ * upgraded=true の場合は CARD_UPGRADE_LIBRARY の effect で上書きする。
+ * @param {string} cardId
+ * @param {boolean} upgraded
+ * @returns {{ cardDef: object, effect: object }}
+ */
+function resolveCardEffect(cardId, upgraded) {
+  const cardDef = CARD_LIBRARY[cardId];
+  if (!cardDef) {
+    return null;
+  }
+  let effect = { ...cardDef.effect };
+  if (upgraded && CARD_UPGRADE_LIBRARY[cardId]) {
+    effect = { ...CARD_UPGRADE_LIBRARY[cardId].effect };
+  }
+  return { cardDef, effect };
+}
 
 /**
  * バトルを初期化する。
- * 全プレイヤーと敵のHPを固定値でセットし、フェーズを 'selecting' にする。
+ * 全プレイヤーと敵のHPを固定値でセットし、各プレイヤーのデッキをシャッフルして
+ * 5枚ドローし、フェーズを 'selecting' にする。
  * @param {GameState} gameState
  */
 function initBattle(gameState) {
@@ -17,16 +96,30 @@ function initBattle(gameState) {
     player.hp = PLAYER_HP;
     player.maxHp = PLAYER_MAX_HP;
     player.block = 0;
+    player.energy = player.maxEnergy || 3;
     player.hand = [];
-    player.deck = [];
     player.discard = [];
+    player.damageTakenThisTurn = 0;
+    player.powers = {};
+    // statusが未初期化の場合はデフォルト値で補完する
+    if (!player.status || typeof player.status !== "object") {
+      player.status = createStatusState();
+    }
+    // デッキが空の場合はスターターデッキを補充する
+    if (!Array.isArray(player.deck) || player.deck.length === 0) {
+      const { createStarterDeckIds } = require("./cards");
+      player.deck = createStarterDeckIds();
+    }
+    shuffleArray(player.deck);
+    drawCards(player, 5);
   });
 
   gameState.enemy = {
     hp: ENEMY_HP,
     maxHp: ENEMY_MAX_HP,
     block: 0,
-    intent: ENEMY_INTENT
+    intent: { type: "attack", value: 10 },
+    status: createStatusState()
   };
 
   gameState.turn = "player";
@@ -75,32 +168,178 @@ function playerReady(gameState, socketId) {
 
 /**
  * 全プレイヤーの選択カードを順番に処理し、結果をゲーム状態に反映する。
- * カード効果:
- *   strike（攻撃）: 敵に6ダメージ
- *   defend（防御）: 自分に5ブロック付与
- *   その他: 何もしない
+ * 全カード効果に対応し、ターン終了処理も行う。
  * 処理後に selectedCards・readyPlayers をリセットし、
  * phase を 'enemy_turn' または（敵HP0以下なら）'finished' に変更する。
  * @param {GameState} gameState
  */
 function resolveCards(gameState) {
-  gameState.selectedCards.forEach((cardId, socketId) => {
+  // angerによる一時筋力フラグを追跡する（socketId => temporaryStrengthAmount）
+  const angerUsed = new Map();
+
+  gameState.selectedCards.forEach((cardEntry, socketId) => {
     const player = gameState.players.get(socketId);
     if (!player) {
       return;
     }
 
-    if (cardId === "strike") {
-      // ブロックを考慮して敵にダメージを与える
-      const blocked = Math.min(gameState.enemy.block, 6);
-      gameState.enemy.block -= blocked;
-      gameState.enemy.hp = Math.max(0, gameState.enemy.hp - (6 - blocked));
-    } else if (cardId === "defend") {
-      // 自プレイヤーにブロックを付与する
-      player.block += 5;
+    // cardEntry は文字列のカードID、またはオブジェクト { id, upgraded } でも受け付ける
+    let cardId, upgraded;
+    if (typeof cardEntry === "object" && cardEntry !== null) {
+      cardId = cardEntry.id;
+      upgraded = cardEntry.upgraded || false;
+    } else {
+      cardId = String(cardEntry);
+      upgraded = false;
     }
-    // その他のカードIDは何もしない
+
+    const resolved = resolveCardEffect(cardId, upgraded);
+    if (!resolved) {
+      // 未定義カードは何もしない
+      return;
+    }
+
+    const { effect } = resolved;
+    const enemy = gameState.enemy;
+
+    // --- 単純ダメージ ---
+    if (effect.damage !== undefined) {
+      const dmg = calculateModifiedDamage(effect.damage, player.status, enemy.status);
+      applyDamageToTarget(enemy, dmg, false);
+    }
+
+    // --- マルチヒットダメージ ---
+    if (Array.isArray(effect.multiDamage)) {
+      effect.multiDamage.forEach((baseDmg) => {
+        const dmg = calculateModifiedDamage(baseDmg, player.status, enemy.status);
+        applyDamageToTarget(enemy, dmg, false);
+      });
+    }
+
+    // --- ブロック ---
+    if (effect.block !== undefined) {
+      const blockAmount = calculateModifiedBlock(effect.block, player.status);
+      player.block += blockAmount;
+    }
+
+    // --- エネルギー回復 ---
+    if (effect.energy !== undefined) {
+      player.energy = (player.energy || 0) + effect.energy;
+    }
+
+    // --- ドロー ---
+    if (effect.draw !== undefined) {
+      drawCards(player, effect.draw);
+    }
+
+    // --- damageTakenThisTurn×倍率ダメージ ---
+    if (effect.damageFromTakenMultiplier !== undefined) {
+      const baseDmg = (player.damageTakenThisTurn || 0) * effect.damageFromTakenMultiplier;
+      const dmg = calculateModifiedDamage(baseDmg, player.status, enemy.status);
+      applyDamageToTarget(enemy, dmg, false);
+    }
+
+    // --- immolate: 手札全廃棄して廃棄枚数×倍率ダメージ ---
+    if (effect.damagePerExhaustedHand !== undefined) {
+      const exhaustedCount = player.hand.length;
+      player.discard.push(...player.hand);
+      player.hand = [];
+      const baseDmg = exhaustedCount * effect.damagePerExhaustedHand;
+      const dmg = calculateModifiedDamage(baseDmg, player.status, enemy.status);
+      applyDamageToTarget(enemy, dmg, false);
+    }
+
+    // --- offering: 手札1枚廃棄 ---
+    if (effect.exhaustOneFromHand) {
+      if (player.hand.length > 0) {
+        // 先頭のカードを廃棄する
+        player.discard.push(player.hand.shift());
+      }
+    }
+
+    // --- secondWind: 手札の非攻撃カードを全廃棄してブロック獲得 ---
+    if (effect.exhaustNonAttackAndGainBlock !== undefined) {
+      const nonAttackCards = player.hand.filter((hCardId) => {
+        const def = CARD_LIBRARY[hCardId];
+        return def && def.type !== "攻撃";
+      });
+      player.hand = player.hand.filter((hCardId) => {
+        const def = CARD_LIBRARY[hCardId];
+        return !def || def.type === "攻撃";
+      });
+      player.discard.push(...nonAttackCards);
+      const blockGain = nonAttackCards.length * effect.exhaustNonAttackAndGainBlock;
+      const blockAmount = calculateModifiedBlock(blockGain, player.status);
+      player.block += blockAmount;
+    }
+
+    // --- 一時的な筋力上昇（anger）---
+    if (effect.temporaryStrength !== undefined) {
+      addStatus(player, "strength", effect.temporaryStrength);
+      angerUsed.set(socketId, effect.temporaryStrength);
+    }
+
+    // --- 敵へのステータス付与 ---
+    if (effect.applyStatusToEnemy) {
+      Object.entries(effect.applyStatusToEnemy).forEach(([statusId, amount]) => {
+        addStatus(enemy, statusId, amount);
+      });
+    }
+
+    // --- 自分へのステータス付与 ---
+    if (effect.applyStatusToSelf) {
+      Object.entries(effect.applyStatusToSelf).forEach(([statusId, amount]) => {
+        addStatus(player, statusId, amount);
+      });
+    }
+
+    // --- パワーカード ---
+    if (effect.grantPower) {
+      player.powers[effect.grantPower] = true;
+    }
   });
+
+  // --- ターン終了処理 ---
+
+  // 各プレイヤーのターン終了処理
+  gameState.players.forEach((player, socketId) => {
+    // 継続ステータス効果（毒・火傷・スタック減少）
+    applyEndOfTurnStatusEffects(player);
+
+    // barricadeを持たないプレイヤーのブロックをリセット
+    if (!player.powers.barricade) {
+      player.block = 0;
+    }
+
+    // demonFormによるターン開始時の筋力上昇（次のターン開始扱いで適用）
+    if (player.powers.demonForm) {
+      addStatus(player, "strength", 2);
+    }
+
+    // angerの一時筋力をターン終了時に減少させる
+    if (angerUsed.has(socketId)) {
+      player.status.strength = Math.max(0, player.status.strength - angerUsed.get(socketId));
+    }
+
+    // このターン受けたダメージをリセット
+    player.damageTakenThisTurn = 0;
+
+    // 手札を捨て札に移動
+    player.discard.push(...player.hand);
+    player.hand = [];
+
+    // 次のターンのために5枚ドロー
+    drawCards(player, 5);
+
+    // エネルギーをリセット
+    player.energy = player.maxEnergy || 3;
+  });
+
+  // 敵のターン終了処理
+  applyEndOfTurnStatusEffects(gameState.enemy);
+  if (!gameState.enemy.powers || !gameState.enemy.powers.barricade) {
+    gameState.enemy.block = 0;
+  }
 
   // 選択状態と準備状態をリセットする
   gameState.selectedCards = new Map();
@@ -119,5 +358,7 @@ module.exports = {
   startSelectPhase,
   playerSelectCard,
   playerReady,
-  resolveCards
+  resolveCards,
+  drawCards,
+  shuffleArray
 };

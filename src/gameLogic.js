@@ -1,6 +1,6 @@
 // バトルの進行を管理する関数群
 
-const { CARD_LIBRARY, CARD_UPGRADE_LIBRARY } = require("./cards");
+const { CARD_LIBRARY, CARD_UPGRADE_LIBRARY, createStarterDeckIds } = require("./cards");
 const {
   createStatusState,
   addStatus,
@@ -107,7 +107,6 @@ function initBattle(gameState) {
     }
     // デッキが空の場合はスターターデッキを補充する
     if (!Array.isArray(player.deck) || player.deck.length === 0) {
-      const { createStarterDeckIds } = require("./cards");
       player.deck = createStarterDeckIds();
     }
     shuffleArray(player.deck);
@@ -259,14 +258,17 @@ function resolveCards(gameState) {
 
     // --- secondWind: 手札の非攻撃カードを全廃棄してブロック獲得 ---
     if (effect.exhaustNonAttackAndGainBlock !== undefined) {
-      const nonAttackCards = player.hand.filter((hCardId) => {
+      const attackCards = [];
+      const nonAttackCards = [];
+      player.hand.forEach((hCardId) => {
         const def = CARD_LIBRARY[hCardId];
-        return def && def.type !== "攻撃";
+        if (def && def.type === "攻撃") {
+          attackCards.push(hCardId);
+        } else {
+          nonAttackCards.push(hCardId);
+        }
       });
-      player.hand = player.hand.filter((hCardId) => {
-        const def = CARD_LIBRARY[hCardId];
-        return !def || def.type === "攻撃";
-      });
+      player.hand = attackCards;
       player.discard.push(...nonAttackCards);
       const blockGain = nonAttackCards.length * effect.exhaustNonAttackAndGainBlock;
       const blockAmount = calculateModifiedBlock(blockGain, player.status);

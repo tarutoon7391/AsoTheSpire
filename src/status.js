@@ -13,6 +13,9 @@ const STATUS_DEFINITIONS = {
   restrained: { label: "拘束", type: "debuff" }
 };
 
+// 火傷1スタックあたりのダメージ
+const BURN_DAMAGE_MULTIPLIER = 5;
+
 // ステータス初期値を作る
 function createStatusState() {
   return {
@@ -100,7 +103,7 @@ function applyEndOfTurnStatusEffects(target, targetName, callbacks) {
 
   // 2. 火傷ダメージ処理
   if (status.burn > 0) {
-    const burnDamage = status.burn * 5;
+    const burnDamage = status.burn * BURN_DAMAGE_MULTIPLIER;
     directDamage(target, burnDamage);
     pushLog(`${name}は火傷で${burnDamage}ダメージ`);
   }

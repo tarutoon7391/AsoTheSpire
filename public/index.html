@@ -428,10 +428,9 @@
           window.MultiplayerAPI.joinRoom(roomId, playerName);
         });
 
-        // ゲーム開始ボタン: battle_start を送信して game.html?mode=multi に遷移する
+        // ゲーム開始ボタン: battle_start を送信する（リダイレクトはbattle_redirectイベントで行う）
         lobbyStartButton.addEventListener("click", function () {
           window.MultiplayerAPI.startBattle();
-          window.location.href = "game.html?mode=multi";
         });
 
         // room_update を受信したら参加者リストを更新する

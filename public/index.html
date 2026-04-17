@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>STS風 バトルプロトタイプ</title>
+    <link rel="stylesheet" href="./style.css" />
+    <style>
+      /* タイトル画面 */
+      #screen-title {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        gap: 1.5rem;
+        background: #1a1a2e;
+        color: #e8d9b0;
+      }
+      #screen-title h1 {
+        font-size: 2.8rem;
+        letter-spacing: 0.1em;
+        margin-bottom: 1rem;
+      }
+      .title-button {
+        padding: 0.75rem 2.5rem;
+        font-size: 1.1rem;
+        border: 2px solid #c8a96e;
+        background: transparent;
+        color: #e8d9b0;
+        cursor: pointer;
+        border-radius: 4px;
+        transition: background 0.2s, color 0.2s;
+        min-width: 200px;
+      }
+      .title-button:hover {
+        background: #c8a96e;
+        color: #1a1a2e;
+      }
+
+      /* ロビー画面 */
+      #screen-lobby {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        gap: 1rem;
+        background: #1a1a2e;
+        color: #e8d9b0;
+        padding: 2rem;
+      }
+      #screen-lobby h1 {
+        font-size: 1.8rem;
+        margin-bottom: 0.5rem;
+      }
+      .lobby-form {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        width: 100%;
+        max-width: 320px;
+      }
+      .lobby-form label {
+        font-size: 0.9rem;
+        color: #c8a96e;
+      }
+      .lobby-form input {
+        padding: 0.5rem 0.75rem;
+        font-size: 1rem;
+        border: 1px solid #555;
+        border-radius: 4px;
+        background: #2a2a3e;
+        color: #e8d9b0;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      #lobbyJoinButton {
+        padding: 0.6rem 1.5rem;
+        font-size: 1rem;
+        border: 2px solid #c8a96e;
+        background: transparent;
+        color: #e8d9b0;
+        cursor: pointer;
+        border-radius: 4px;
+        transition: background 0.2s, color 0.2s;
+        margin-top: 0.25rem;
+      }
+      #lobbyJoinButton:hover {
+        background: #c8a96e;
+        color: #1a1a2e;
+      }
+      #lobbyBackButton {
+        padding: 0.4rem 1rem;
+        font-size: 0.9rem;
+        border: 1px solid #888;
+        background: transparent;
+        color: #aaa;
+        cursor: pointer;
+        border-radius: 4px;
+      }
+      #lobbyBackButton:hover {
+        border-color: #e8d9b0;
+        color: #e8d9b0;
+      }
+      #lobbyError {
+        color: #e05555;
+        font-size: 0.9rem;
+        min-height: 1.2em;
+      }
+      #lobbyPlayerList {
+        width: 100%;
+        max-width: 320px;
+        background: #2a2a3e;
+        border-radius: 4px;
+        padding: 0.75rem 1rem;
+      }
+      #lobbyPlayerList h2 {
+        font-size: 1rem;
+        color: #c8a96e;
+        margin: 0 0 0.5rem;
+      }
+      #lobbyPlayerList ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        font-size: 0.95rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+      #lobbyPlayerList li::before {
+        content: "▸ ";
+        color: #c8a96e;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- タイトル画面 -->
+    <section id="screen-title">
+      <h1>AsoTheSpire</h1>
+      <button type="button" class="title-button" id="soloPlayButton">ソロでプレイ</button>
+      <button type="button" class="title-button" id="multiPlayButton">マルチでプレイ</button>
+    </section>
+
+    <!-- マルチプレイ ロビー画面 -->
+    <section id="screen-lobby" class="hidden">
+      <h1>マルチプレイ ロビー</h1>
+      <div class="lobby-form">
+        <label for="lobbyRoomId">ルームID</label>
+        <input type="text" id="lobbyRoomId" placeholder="例: room-1" maxlength="32" />
+        <label for="lobbyPlayerName">プレイヤー名</label>
+        <input type="text" id="lobbyPlayerName" placeholder="例: プレイヤー1" maxlength="20" />
+        <button type="button" id="lobbyJoinButton">参加する</button>
+        <p id="lobbyError"></p>
+      </div>
+      <div id="lobbyPlayerList" class="hidden">
+        <h2>参加者一覧</h2>
+        <ul id="lobbyPlayerListItems"></ul>
+      </div>
+      <button type="button" id="lobbyBackButton">← タイトルに戻る</button>
+    </section>
+
+    <!-- ゲーム画面（ソロ） -->
+    <div id="screen-game" class="hidden">
+    <section id="screen-map" class="screen">
+      <div class="map-screen">
+        <h1 class="screen-title">MAP</h1>
+        <p class="run-status">
+          HP: <span id="mapPlayerHp">0 / 0</span>
+          <span class="run-status-sep">|</span>
+          GOLD: <span id="mapGold">0</span>
+          <span class="run-status-sep">|</span>
+          戦闘数: <span id="mapBattleCount">0</span>
+        </p>
+        <div id="mapRooms" class="map-rooms"></div>
+      </div>
+    </section>
+
+    <section id="screen-battle" class="screen hidden">
+      <main class="game">
+        <h1>Slay the Spire風 バトル（フェーズ3）</h1>
+
+      <section class="top-area">
+        <section class="status-area">
+          <div id="enemyPanel" class="panel enemy-panel">
+            <div id="enemyIntentDisplay" class="intent-display"></div>
+            <h2>敵</h2>
+            <p>HP: <span id="enemyHp">0</span></p>
+            <p>ブロック: <span id="enemyBlock">0</span></p>
+            <div id="enemyStatuses" class="status-list"></div>
+          </div>
+
+          <div id="playerPanel" class="panel player-panel">
+            <h2>プレイヤー</h2>
+            <p>HP: <span id="playerHp">0</span></p>
+            <p>ブロック: <span id="playerBlock">0</span></p>
+            <div id="playerStatuses" class="status-list"></div>
+            <p>マナ: <span id="playerEnergy">0</span> / 3</p>
+            <p>山札: <span id="drawPileCount">0</span> 枚</p>
+            <p>捨て山: <span id="discardPileCount">0</span> 枚</p>
+            <p>廃棄: <span id="exhaustPileCount">0</span> 枚</p>
+          </div>
+        </section>
+
+        <section class="controls">
+          <button id="endTurnButton" type="button">ターン終了</button>
+          <button id="deckViewButton" type="button">デッキを見る</button>
+          <div class="battle-hud">
+            <span id="turnIndicator" class="turn-indicator">PLAYER TURN</span>
+            <span id="incomingDamageBadge" class="incoming-badge">次被ダメ予測 <strong id="predictedIncomingDamage">0</strong></span>
+          </div>
+          <p id="message">バトル開始</p>
+        </section>
+
+        <section id="rewardSection" class="reward-section hidden">
+          <h2>VICTORY</h2>
+          <p class="reward-caption">カードを1枚獲得するか、スキップしてください</p>
+          <div id="rewardCards" class="reward-cards"></div>
+          <button id="skipRewardButton" type="button">スキップ</button>
+        </section>
+      </section>
+
+      <section class="bottom-area">
+        <h2>手札</h2>
+        <div id="hand" class="hand"></div>
+      </section>
+      </main>
+
+      <div class="pile-buttons">
+        <button id="drawPileButton" class="pile-button" type="button">
+          山札
+          <span id="drawPileBadge" class="pile-badge">0</span>
+        </button>
+        <button id="discardPileButton" class="pile-button" type="button">
+          捨て札
+          <span id="discardPileBadge" class="pile-badge">0</span>
+        </button>
+        <button id="exhaustPileButton" class="pile-button" type="button">
+          廃棄札
+          <span id="exhaustPileBadge" class="pile-badge">0</span>
+        </button>
+      </div>
+    </section>
+
+    <section id="screen-shop" class="screen hidden">
+      <div class="shop-screen">
+        <h1 class="screen-title">SHOP</h1>
+        <p class="run-status">
+          GOLD: <span id="shopGold">0</span>
+        </p>
+        <div id="shopCards" class="shop-cards"></div>
+        <button id="shopNextButton" type="button">次へ</button>
+      </div>
+    </section>
+
+    <div id="restOverlay" class="overlay hidden">
+      <div class="overlay-panel">
+        <h2>休憩所</h2>
+        <p class="rest-note">「戻る」は部屋を消費せず、あとで選び直せます。</p>
+        <div class="rest-actions">
+          <button id="restHealButton" type="button">休む（最大HPの30%回復）</button>
+          <button id="restSmithButton" type="button">鍛える</button>
+          <button id="restCloseButton" type="button">戻る（消費しない）</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="smithOverlay" class="overlay hidden">
+      <div class="overlay-panel">
+        <h2>鍛えるカードを選択</h2>
+        <div id="smithDeckList" class="deck-grid"></div>
+        <button id="closeSmithButton" type="button">戻る</button>
+      </div>
+    </div>
+
+    <div id="smithCompareOverlay" class="overlay hidden">
+      <div class="overlay-panel smith-compare-panel">
+        <h2>強化確認</h2>
+        <div class="smith-compare-content">
+          <div id="smithBeforeCard"></div>
+          <div class="smith-arrow">→</div>
+          <div id="smithAfterCard"></div>
+        </div>
+        <p id="smithDiffText" class="smith-diff-text"></p>
+        <div class="smith-compare-actions">
+          <button id="confirmSmithButton" type="button">強化する</button>
+          <button id="cancelSmithButton" type="button">キャンセル</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="runEndOverlay" class="overlay hidden">
+      <div class="overlay-panel run-end-panel">
+        <h2 id="runEndTitle">GAME CLEAR!</h2>
+        <p>最終戦闘数: <span id="runEndBattleCount">0</span></p>
+        <p>残りHP: <span id="runEndHp">0 / 0</span></p>
+        <button id="restartRunButton" type="button">最初からプレイ</button>
+      </div>
+    </div>
+
+    <div id="deckOverlay" class="overlay hidden">
+      <div class="overlay-panel">
+        <h2>デッキ一覧</h2>
+        <div id="deckList" class="deck-grid"></div>
+        <button id="closeDeckButton" type="button">閉じる</button>
+      </div>
+    </div>
+
+    <div id="discardOverlay" class="overlay hidden">
+      <div class="overlay-panel">
+        <h2>捨て札一覧</h2>
+        <div id="discardList" class="deck-grid"></div>
+        <button id="closeDiscardButton" type="button">閉じる</button>
+      </div>
+    </div>
+
+    <div id="drawOverlay" class="overlay hidden">
+      <div class="overlay-panel">
+        <h2>山札一覧</h2>
+        <div id="drawList" class="deck-grid"></div>
+        <button id="closeDrawButton" type="button">閉じる</button>
+      </div>
+    </div>
+
+    <div id="exhaustOverlay" class="overlay hidden">
+      <div class="overlay-panel">
+        <h2>廃棄札一覧</h2>
+        <div id="exhaustList" class="deck-grid"></div>
+        <button id="closeExhaustButton" type="button">閉じる</button>
+      </div>
+    </div>
+
+    <ul id="log" class="hidden"></ul>
+
+    </div><!-- #screen-game -->
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="./js/utils.js"></script>
+    <script src="./js/cards.js"></script>
+    <script src="./js/status.js"></script>
+    <script src="./js/game.js"></script>
+    <script src="./js/shop.js"></script>
+    <script src="./js/map.js"></script>
+    <script src="./js/multiplayer.js"></script>
+    <script>
+      // タイトル画面の操作を管理する
+      (function initTitleScreen() {
+        var screenTitle = document.getElementById("screen-title");
+        var screenLobby = document.getElementById("screen-lobby");
+        var screenGame = document.getElementById("screen-game");
+
+        var soloPlayButton = document.getElementById("soloPlayButton");
+        var multiPlayButton = document.getElementById("multiPlayButton");
+        var lobbyJoinButton = document.getElementById("lobbyJoinButton");
+        var lobbyBackButton = document.getElementById("lobbyBackButton");
+        var lobbyRoomId = document.getElementById("lobbyRoomId");
+        var lobbyPlayerName = document.getElementById("lobbyPlayerName");
+        var lobbyError = document.getElementById("lobbyError");
+        var lobbyPlayerList = document.getElementById("lobbyPlayerList");
+        var lobbyPlayerListItems = document.getElementById("lobbyPlayerListItems");
+
+        // 指定画面のみ表示する
+        function showScreen(screenId) {
+          screenTitle.classList.add("hidden");
+          screenLobby.classList.add("hidden");
+          screenGame.classList.add("hidden");
+          document.getElementById(screenId).classList.remove("hidden");
+        }
+
+        // 参加者リストを描画する
+        function renderPlayerList(players) {
+          lobbyPlayerListItems.innerHTML = "";
+          players.forEach(function (p) {
+            var li = document.createElement("li");
+            li.textContent = p.playerName;
+            lobbyPlayerListItems.appendChild(li);
+          });
+          lobbyPlayerList.classList.remove("hidden");
+        }
+
+        // ソロでプレイ
+        soloPlayButton.addEventListener("click", function () {
+          showScreen("screen-game");
+        });
+
+        // マルチでプレイ
+        multiPlayButton.addEventListener("click", function () {
+          showScreen("screen-lobby");
+        });
+
+        // タイトルに戻る
+        lobbyBackButton.addEventListener("click", function () {
+          lobbyError.textContent = "";
+          lobbyPlayerList.classList.add("hidden");
+          lobbyPlayerListItems.innerHTML = "";
+          showScreen("screen-title");
+        });
+
+        // ルームに参加する
+        lobbyJoinButton.addEventListener("click", function () {
+          var roomId = lobbyRoomId.value.trim();
+          var playerName = lobbyPlayerName.value.trim();
+
+          if (!roomId || !playerName) {
+            lobbyError.textContent = "ルームIDとプレイヤー名を入力してください";
+            return;
+          }
+
+          lobbyError.textContent = "";
+          window.MultiplayerAPI.joinRoom(roomId, playerName);
+        });
+
+        // room_update を受信したら参加者リストを更新する
+        window.MultiplayerAPI.onRoomUpdate(function (roomData) {
+          renderPlayerList(roomData.players);
+        });
+
+        // join_error を受信したらエラーを表示する
+        window.MultiplayerAPI.onJoinError(function (errorData) {
+          lobbyError.textContent = errorData.error;
+        });
+      })();
+    </script>
+  </body>
+</html>

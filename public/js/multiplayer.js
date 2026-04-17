@@ -9,19 +9,19 @@
   // localStorage に保存されたマルチプレイセッション情報を読み込み、
   // 新たに追加されたフィールドが存在しない場合はデフォルト値で補完する
   function loadMultiSession() {
-    var raw = null;
+    var savedData = null;
     try {
-      raw = localStorage.getItem("multiSession");
+      savedData = localStorage.getItem("multiSession");
     } catch (e) {
       // localStorage が利用できない環境ではデフォルト値を返す
     }
     var defaults = { roomId: "", playerName: "" };
-    if (!raw) {
+    if (!savedData) {
       return defaults;
     }
     var data;
     try {
-      data = JSON.parse(raw);
+      data = JSON.parse(savedData);
     } catch (e) {
       return defaults;
     }
@@ -116,17 +116,11 @@
 
     // data-card-id 属性からカード ID を取得する（手札カードの属性名に合わせる）
     if (selectedCard) {
-      // game.js が付与する data-hand-index から対応するカード情報を取得する
-      var handIndex = selectedCard.dataset.handIndex;
-      if (handIndex !== undefined && window.BattleAPI) {
-        // game.js の gameState から手札のカード ID を取得する
-        var masterDeck = window.BattleAPI.getMasterDeck ? window.BattleAPI.getMasterDeck() : [];
-        // hand-key 形式: "{index}-{cardId}-{u|n}"
-        var key = selectedCard.dataset.handKey || "";
-        var parts = key.split("-");
-        if (parts.length >= 2) {
-          cardId = parts[1];
-        }
+      // hand-key 形式: "{index}-{cardId}-{u|n}" からカード ID を取り出す
+      var key = selectedCard.dataset.handKey || "";
+      var parts = key.split("-");
+      if (parts.length >= 2) {
+        cardId = parts[1];
       }
     }
 

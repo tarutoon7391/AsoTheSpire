@@ -99,6 +99,37 @@
         font-weight: bold;
         color: #c8a96e;
       }
+      .multi-player-ready {
+        color: #7ec87e;
+        margin-left: 0.3rem;
+      }
+
+      /* マルチプレイ用敵情報パネル */
+      #multi-enemy-panel {
+        position: fixed;
+        top: 0;
+        left: 0;
+        z-index: 199;
+        background: rgba(26, 26, 46, 0.85);
+        border-right: 1px solid #555;
+        border-bottom: 1px solid #555;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.85rem;
+        color: #e8d9b0;
+        max-width: 200px;
+      }
+      #multi-enemy-panel.hidden {
+        display: none;
+      }
+      #multi-enemy-panel h3 {
+        font-size: 0.85rem;
+        color: #c8a96e;
+        margin-bottom: 0.4rem;
+      }
+      #multi-enemy-intent {
+        color: #f08080;
+        margin-top: 0.2rem;
+      }
 
       /* 手札カードの選択状態 */
       .hand-card.selected {
@@ -114,6 +145,14 @@
       <button type="button" id="multi-ready-btn">準備完了</button>
       <span id="multi-waiting-msg" class="hidden">他のプレイヤーを待っています... (1/1)</span>
       <div id="multi-result-area" class="hidden"></div>
+    </div>
+
+    <!-- マルチプレイ用敵情報パネル（マルチモード時のみ表示） -->
+    <div id="multi-enemy-panel" class="hidden">
+      <h3>敵の状態</h3>
+      <div id="multi-enemy-hp">HP: -</div>
+      <div id="multi-enemy-block">ブロック: -</div>
+      <div id="multi-enemy-intent">次の行動: -</div>
     </div>
 
     <!-- マルチプレイ用プレイヤー状態パネル（マルチモード時のみ表示） -->

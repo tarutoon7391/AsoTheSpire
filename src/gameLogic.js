@@ -355,12 +355,72 @@ function resolveCards(gameState) {
   }
 }
 
+/**
+ * 敵が全プレイヤーを攻撃し、次のインテントをランダムに設定する。
+ * 攻撃後にターン開始処理（ブロックリセット・エネルギーリセット・ドロー）を行い
+ * phase を 'selecting' に戻す。全プレイヤーのHPが0以下なら 'finished' にする。
+ * @param {GameState} gameState
+ */
+function enemyAttack(gameState) {
+  const enemy = gameState.enemy;
+
+  if (enemy.intent && enemy.intent.type === "attack") {
+    gameState.players.forEach((player) => {
+      const dmg = calculateModifiedDamage(enemy.intent.value, enemy.status, player.status);
+      applyDamageToTarget(player, dmg, true);
+    });
+  }
+
+  // 次のインテントをランダムに設定する（50%ずつ attack/block）
+  if (Math.random() < 0.5) {
+    const value = Math.floor(Math.random() * 6) + 10; // 10〜15
+    enemy.intent = { type: "attack", value };
+  } else {
+    const value = Math.floor(Math.random() * 5) + 8; // 8〜12
+    enemy.intent = { type: "block", value };
+  }
+
+  // 敵のブロックリセット
+  if (!enemy.powers || !enemy.powers.barricade) {
+    enemy.block = 0;
+  }
+
+  // 各プレイヤーのターン開始処理
+  gameState.players.forEach((player) => {
+    // ブロックリセット（barricadeがない場合）
+    if (!player.powers || !player.powers.barricade) {
+      player.block = 0;
+    }
+    // エネルギーリセット
+    player.energy = player.maxEnergy || 3;
+    // このターン受けたダメージをリセット
+    player.damageTakenThisTurn = 0;
+    // 手札を捨て札に移動して5枚ドロー
+    player.discard.push(...player.hand);
+    player.hand = [];
+    drawCards(player, 5);
+  });
+
+  // 選択状態と準備状態をリセットする
+  gameState.selectedCards = new Map();
+  gameState.readyPlayers = new Set();
+
+  // 全プレイヤーのHPが0以下なら終了フェーズへ、そうでなければ次のターンへ
+  const allDead = Array.from(gameState.players.values()).every((p) => p.hp <= 0);
+  if (allDead) {
+    gameState.phase = "finished";
+  } else {
+    gameState.phase = "selecting";
+  }
+}
+
 module.exports = {
   initBattle,
   startSelectPhase,
   playerSelectCard,
   playerReady,
   resolveCards,
+  enemyAttack,
   drawCards,
   shuffleArray
 };

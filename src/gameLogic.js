@@ -73,9 +73,51 @@ function playerReady(gameState, socketId) {
   return gameState.allPlayersReady();
 }
 
+/**
+ * 全プレイヤーの選択カードを順番に処理し、結果をゲーム状態に反映する。
+ * カード効果:
+ *   strike（攻撃）: 敵に6ダメージ
+ *   defend（防御）: 自分に5ブロック付与
+ *   その他: 何もしない
+ * 処理後に selectedCards・readyPlayers をリセットし、
+ * phase を 'enemy_turn' または（敵HP0以下なら）'finished' に変更する。
+ * @param {GameState} gameState
+ */
+function resolveCards(gameState) {
+  gameState.selectedCards.forEach((cardId, socketId) => {
+    const player = gameState.players.get(socketId);
+    if (!player) {
+      return;
+    }
+
+    if (cardId === "strike") {
+      // ブロックを考慮して敵にダメージを与える
+      const blocked = Math.min(gameState.enemy.block, 6);
+      gameState.enemy.block -= blocked;
+      gameState.enemy.hp = Math.max(0, gameState.enemy.hp - (6 - blocked));
+    } else if (cardId === "defend") {
+      // 自プレイヤーにブロックを付与する
+      player.block += 5;
+    }
+    // その他のカードIDは何もしない
+  });
+
+  // 選択状態と準備状態をリセットする
+  gameState.selectedCards = new Map();
+  gameState.readyPlayers = new Set();
+
+  // 敵のHPが0以下なら終了フェーズへ、そうでなければ敵のターンへ
+  if (gameState.enemy.hp <= 0) {
+    gameState.phase = "finished";
+  } else {
+    gameState.phase = "enemy_turn";
+  }
+}
+
 module.exports = {
   initBattle,
   startSelectPhase,
   playerSelectCard,
-  playerReady
+  playerReady,
+  resolveCards
 };

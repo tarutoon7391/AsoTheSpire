@@ -90,6 +90,21 @@
         background: #c8a96e;
         color: #1a1a2e;
       }
+      #lobbyStartButton {
+        padding: 0.6rem 1.5rem;
+        font-size: 1rem;
+        border: 2px solid #5fa85f;
+        background: transparent;
+        color: #a8e6a8;
+        cursor: pointer;
+        border-radius: 4px;
+        transition: background 0.2s, color 0.2s;
+        margin-top: 0.5rem;
+      }
+      #lobbyStartButton:hover {
+        background: #5fa85f;
+        color: #1a1a2e;
+      }
       #lobbyBackButton {
         padding: 0.4rem 1rem;
         font-size: 0.9rem;
@@ -157,6 +172,7 @@
       <div id="lobbyPlayerList" class="hidden">
         <h2>参加者一覧</h2>
         <ul id="lobbyPlayerListItems"></ul>
+        <button type="button" id="lobbyStartButton">ゲーム開始</button>
       </div>
       <button type="button" id="lobbyBackButton">← タイトルに戻る</button>
     </section>
@@ -354,6 +370,7 @@
         var multiPlayButton = document.getElementById("multiPlayButton");
         var lobbyJoinButton = document.getElementById("lobbyJoinButton");
         var lobbyBackButton = document.getElementById("lobbyBackButton");
+        var lobbyStartButton = document.getElementById("lobbyStartButton");
         var lobbyRoomId = document.getElementById("lobbyRoomId");
         var lobbyPlayerName = document.getElementById("lobbyPlayerName");
         var lobbyError = document.getElementById("lobbyError");
@@ -409,6 +426,12 @@
 
           lobbyError.textContent = "";
           window.MultiplayerAPI.joinRoom(roomId, playerName);
+        });
+
+        // ゲーム開始ボタン: battle_start を送信して game.html?mode=multi に遷移する
+        lobbyStartButton.addEventListener("click", function () {
+          window.MultiplayerAPI.startBattle();
+          window.location.href = "game.html?mode=multi";
         });
 
         // room_update を受信したら参加者リストを更新する

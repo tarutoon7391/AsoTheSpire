@@ -25,9 +25,35 @@
     socket.on("join_error", callback);
   }
 
+  // game_state_update を受信したときにコンソールへ表示する
+  socket.on("game_state_update", function (gameState) {
+    console.log("[game_state_update]", JSON.stringify(gameState, null, 2));
+  });
+
+  // battle_start を送信する
+  // roomId: string
+  function sendBattleStart(roomId) {
+    socket.emit("battle_start", { roomId });
+  }
+
+  // select_card を送信する
+  // roomId: string, cardId: string
+  function sendSelectCard(roomId, cardId) {
+    socket.emit("select_card", { roomId, cardId });
+  }
+
+  // player_ready を送信する
+  // roomId: string
+  function sendPlayerReady(roomId) {
+    socket.emit("player_ready", { roomId });
+  }
+
   window.MultiplayerAPI = {
     joinRoom,
     onRoomUpdate,
-    onJoinError
+    onJoinError,
+    sendBattleStart,
+    sendSelectCard,
+    sendPlayerReady
   };
 })();

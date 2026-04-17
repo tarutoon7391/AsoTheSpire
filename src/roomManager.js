@@ -2,14 +2,23 @@
 
 const MAX_PLAYERS_PER_ROOM = 4;
 
+/**
+ * マルチプレイのルームを管理するクラス。
+ * ルームの作成・参加・退出・取得を担当する。
+ */
 class RoomManager {
   constructor() {
     // roomId => { players: [{ socketId, playerName }] }
     this.rooms = new Map();
   }
 
-  // ルームに参加する（存在しない場合は新規作成）
-  // 戻り値: { success: boolean, room: object|null, error: string|null }
+  /**
+   * 指定ルームに参加する。ルームが存在しない場合は新規作成する。
+   * @param {string} roomId - ルームID
+   * @param {string} socketId - 参加するソケットのID
+   * @param {string} playerName - プレイヤー名
+   * @returns {{ success: boolean, room: object|null, error: string|null }}
+   */
   joinRoom(roomId, socketId, playerName) {
     if (!this.rooms.has(roomId)) {
       this.rooms.set(roomId, { players: [] });
@@ -30,8 +39,12 @@ class RoomManager {
     return { success: true, room: this.getRoomView(roomId), error: null };
   }
 
-  // ソケットIDに紐づくプレイヤーをすべてのルームから削除する
-  // 戻り値: 影響を受けたルームIDの配列
+  /**
+   * ソケットIDに紐づくプレイヤーをすべてのルームから削除する。
+   * プレイヤーが0人になったルームは自動的に削除される。
+   * @param {string} socketId - 削除するソケットのID
+   * @returns {string[]} 影響を受けたルームIDの配列
+   */
   removeSocket(socketId) {
     const affectedRoomIds = [];
 
@@ -51,7 +64,11 @@ class RoomManager {
     return affectedRoomIds;
   }
 
-  // ルームの表示用データを返す
+  /**
+   * ルームの表示用データを返す。
+   * @param {string} roomId - ルームID
+   * @returns {{ roomId: string, players: Array<{socketId: string, playerName: string}> }|null}
+   */
   getRoomView(roomId) {
     const room = this.rooms.get(roomId);
     if (!room) {
@@ -63,7 +80,11 @@ class RoomManager {
     };
   }
 
-  // ルームが存在するかどうかを返す
+  /**
+   * ルームが存在するかどうかを返す。
+   * @param {string} roomId - ルームID
+   * @returns {boolean}
+   */
   hasRoom(roomId) {
     return this.rooms.has(roomId);
   }

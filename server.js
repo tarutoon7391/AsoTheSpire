@@ -6,11 +6,15 @@ const http = require("http");
 const path = require("path");
 const { Server } = require("socket.io");
 const RoomManager = require("./src/roomManager");
+const GameState = require("./src/gameState");
+const { initBattle, playerSelectCard, playerReady } = require("./src/gameLogic");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 const roomManager = new RoomManager();
+// roomId => GameState
+const gameStates = new Map();
 
 const PORT = process.env.PORT || 3000;
 
@@ -60,7 +64,78 @@ io.on("connection", (socket) => {
       if (roomView) {
         io.to(roomId).emit("room_update", roomView);
       }
+
+      // ゲーム状態からも該当プレイヤーを削除する
+      const gs = gameStates.get(roomId);
+      if (gs) {
+        gs.removePlayer(socket.id);
+        // ルームにプレイヤーがいなくなったらゲーム状態を破棄する
+        if (gs.players.size === 0) {
+          gameStates.delete(roomId);
+        }
+      }
     });
+  });
+
+  // battle_start イベント：ルーム内の全員にinitBattleを実行してgame_state_updateをブロードキャストする
+  // payload: { roomId: string }
+  socket.on("battle_start", (payload) => {
+    const roomId = String(payload?.roomId || "").trim();
+    const roomView = roomManager.getRoomView(roomId);
+
+    if (!roomView) {
+      socket.emit("join_error", { error: "ルームが存在しません" });
+      return;
+    }
+
+    // ゲーム状態が未作成なら新規作成し、ルーム参加者をすべて登録する
+    if (!gameStates.has(roomId)) {
+      const gs = new GameState(roomId);
+      roomView.players.forEach((p) => gs.addPlayer(p.socketId, p.playerName));
+      gameStates.set(roomId, gs);
+    }
+
+    const gs = gameStates.get(roomId);
+    initBattle(gs);
+
+    console.log(`ルーム ${roomId} のバトルを開始`);
+    io.to(roomId).emit("game_state_update", gs.toJSON());
+  });
+
+  // select_card イベント：プレイヤーがカードを選択する
+  // payload: { roomId: string, cardId: string }
+  socket.on("select_card", (payload) => {
+    const roomId = String(payload?.roomId || "").trim();
+    const cardId = String(payload?.cardId || "").trim();
+    const gs = gameStates.get(roomId);
+
+    if (!gs) {
+      return;
+    }
+
+    playerSelectCard(gs, socket.id, cardId);
+    io.to(roomId).emit("game_state_update", gs.toJSON());
+  });
+
+  // player_ready イベント：プレイヤーが準備完了を宣言する
+  // 全員揃ったらphaseを'resolving'にしてgame_state_updateをブロードキャストする
+  // payload: { roomId: string }
+  socket.on("player_ready", (payload) => {
+    const roomId = String(payload?.roomId || "").trim();
+    const gs = gameStates.get(roomId);
+
+    if (!gs) {
+      return;
+    }
+
+    const allReady = playerReady(gs, socket.id);
+
+    if (allReady) {
+      gs.phase = "resolving";
+      console.log(`ルーム ${roomId} の全員が準備完了 → resolving フェーズへ`);
+    }
+
+    io.to(roomId).emit("game_state_update", gs.toJSON());
   });
 });
 

@@ -1594,6 +1594,10 @@ function render() {
   renderHand();
 }
 
+// render・gameState を外部（multiplayer.js 等）から参照できるように公開する
+window.render = render;
+window.gameState = gameState;
+
 // デッキオーバーレイを開く
 function openDeckOverlay() {
   renderDeckList();

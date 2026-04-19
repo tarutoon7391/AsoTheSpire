@@ -119,10 +119,9 @@
         });
       }
 
-      // game.js のバトルを開始してデモ用手札を準備する
-      if (window.BattleAPI && typeof window.BattleAPI.startBattle === "function") {
-        window.BattleAPI.startBattle(50);
-      }
+      // game.js のバトルを開始しない（マルチモードではサーバー側でゲームを管理する）
+      // サーバーへ battle_start イベントを送信してサーバー側でゲームを初期化する
+      startBattle();
     });
   }
 
@@ -226,7 +225,10 @@
         });
       }
     } else if (gameState.phase === "resolving") {
-      // 解決フェーズ: 待機メッセージを非表示にして「解決中...」を表示する
+      // 解決フェーズ: ターン終了ボタンを非活性にして「解決中...」を表示する
+      if (endTurnBtn) {
+        endTurnBtn.disabled = true;
+      }
       if (waitingMsg) {
         waitingMsg.classList.add("hidden");
       }
@@ -242,8 +244,14 @@
       if (resultArea) {
         resultArea.classList.remove("hidden");
         var enemy = gameState.enemy || {};
-        if (enemy.hp <= 0) {
-          resultArea.textContent = "🎉 勝利！敵を倒しました！";
+        var players = gameState.players || {};
+        var allDead = Object.keys(players).length > 0 && Object.keys(players).every(function (id) {
+          return (players[id].hp || 0) <= 0;
+        });
+        if (allDead) {
+          resultArea.textContent = "💀 ゲームオーバー";
+        } else if ((enemy.hp || 0) <= 0) {
+          resultArea.textContent = "🎉 勝利！";
         } else {
           resultArea.textContent = "💀 ゲームオーバー";
         }
@@ -255,13 +263,16 @@
         endTurnBtn.disabled = true;
       }
     } else if (gameState.phase === "enemy_turn") {
-      // 敵のターン: 待機メッセージを非表示にして結果を表示する
+      // 敵のターン: ターン終了ボタンを非活性にして「敵のターン...」を表示する
+      if (endTurnBtn) {
+        endTurnBtn.disabled = true;
+      }
       if (waitingMsg) {
         waitingMsg.classList.add("hidden");
       }
       if (resultArea) {
         resultArea.classList.remove("hidden");
-        resultArea.textContent = "敵のターン中...";
+        resultArea.textContent = "敵のターン...";
       }
     }
   });
@@ -295,10 +306,12 @@
       var isReady = readyPlayers.indexOf(socketId) !== -1;
       var entry = document.createElement("div");
       entry.className = "multi-player-entry";
+
       var name = document.createElement("span");
       name.className = "multi-player-name";
       name.textContent = p.name || socketId;
       entry.appendChild(name);
+
       // 準備完了ならチェックマークを表示する
       if (isReady) {
         var check = document.createElement("span");
@@ -306,9 +319,13 @@
         check.textContent = " ✔";
         entry.appendChild(check);
       }
+
+      // HP: 現在値 / 最大値 形式で表示する
       var info = document.createElement("span");
-      info.textContent = " HP:" + (p.hp || 0) + "/" + (p.maxHp || 0) + " ブロック:" + (p.block || 0);
+      var blockText = (p.block || 0) > 0 ? " 🛡 " + (p.block || 0) : "";
+      info.textContent = " HP: " + (p.hp || 0) + " / " + (p.maxHp || 0) + blockText;
       entry.appendChild(info);
+
       listEl.appendChild(entry);
     });
   }
@@ -320,10 +337,16 @@
       return;
     }
     var hpEl = document.getElementById("multi-enemy-hp");
+    var maxHpEl = document.getElementById("multi-enemy-maxhp");
     var blockEl = document.getElementById("multi-enemy-block");
     var intentEl = document.getElementById("multi-enemy-intent");
+
+    // HP: 現在値 / 最大値 形式で表示する
     if (hpEl) {
-      hpEl.textContent = "HP: " + (enemy.hp || 0) + " / " + (enemy.maxHp || 0);
+      hpEl.textContent = "HP: " + (enemy.hp || 0) + " / ";
+    }
+    if (maxHpEl) {
+      maxHpEl.textContent = String(enemy.maxHp || 0);
     }
     if (blockEl) {
       blockEl.textContent = "ブロック: " + (enemy.block || 0);
@@ -331,9 +354,9 @@
     if (intentEl && enemy.intent) {
       var intentText;
       if (enemy.intent.type === "attack") {
-        intentText = "⚔ 攻撃: " + enemy.intent.value + " ダメージ";
+        intentText = "⚔ " + enemy.intent.value + " ダメージ";
       } else if (enemy.intent.type === "block") {
-        intentText = "🛡 ブロック: " + enemy.intent.value;
+        intentText = "🛡 ブロック";
       } else {
         intentText = enemy.intent.type;
       }

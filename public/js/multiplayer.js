@@ -74,12 +74,6 @@
         playersPanel.classList.remove("hidden");
       }
 
-      // 敵情報パネルを表示する
-      var enemyPanel = document.getElementById("multi-enemy-panel");
-      if (enemyPanel) {
-        enemyPanel.classList.remove("hidden");
-      }
-
       // ターン終了ボタン（#endTurnButton）にマルチ用のハンドラを追加する
       var endTurnBtn = document.getElementById("endTurnButton");
       if (endTurnBtn) {
@@ -88,14 +82,6 @@
             return;
           }
           handleEndTurn();
-        });
-      }
-
-      // 準備完了ボタンのクリック処理を登録する
-      var readyBtn = document.getElementById("multi-ready-btn");
-      if (readyBtn) {
-        readyBtn.addEventListener("click", function () {
-          handleReadyButton();
         });
       }
 
@@ -147,38 +133,6 @@
     }
   }
 
-  // --- 準備完了ボタンの処理 ---
-  function handleReadyButton() {
-    var hand = document.getElementById("hand");
-    var selectedCard = hand ? hand.querySelector(".hand-card.selected") : null;
-    var cardId = selectedCard ? selectedCard.dataset.cardId || selectedCard.dataset.handKey || "" : "";
-
-    // data-card-id 属性からカード ID を取得する（手札カードの属性名に合わせる）
-    if (selectedCard) {
-      // hand-key 形式: "{index}-{cardId}-{u|n}" からカード ID を取り出す
-      var key = selectedCard.dataset.handKey || "";
-      var parts = key.split("-");
-      if (parts.length >= 2) {
-        cardId = parts[1];
-      }
-    }
-
-    if (cardId) {
-      sendSelectCard(cardId);
-    }
-    sendPlayerReady();
-
-    // ボタンを非活性にして待機メッセージを表示する
-    var readyBtn = document.getElementById("multi-ready-btn");
-    if (readyBtn) {
-      readyBtn.disabled = true;
-    }
-    var waitingMsg = document.getElementById("multi-waiting-msg");
-    if (waitingMsg) {
-      waitingMsg.classList.remove("hidden");
-    }
-  }
-
   // --- battle_redirect 受信時のリダイレクト処理 ---
   socket.on("battle_redirect", function (data) {
     if (data && data.redirect) {
@@ -202,22 +156,19 @@
     // multi-players-panel に全プレイヤーの HP・ブロックを表示する
     updatePlayersPanel(gameState);
 
-    // 敵情報パネルを更新する
-    updateEnemyPanel(gameState);
-
     // サーバーから受け取った自分のプレイヤーデータをソロのgameStateに反映して画面を更新する
     var myPlayer = gameState.players ? gameState.players[socket.id] : null;
     if (myPlayer && window.gameState) {
+      window.gameState.player.hp = myPlayer.hp;
+      window.gameState.player.maxHp = myPlayer.maxHp;
+      window.gameState.player.block = myPlayer.block;
+      window.gameState.player.energy = myPlayer.energy;
       // 手札をサーバーのカードIDリストからオブジェクト形式に変換して反映する
       if (Array.isArray(myPlayer.hand)) {
         window.gameState.player.hand = myPlayer.hand.map(function (cardId) {
           return { id: cardId, upgraded: false };
         });
       }
-      window.gameState.player.hp = myPlayer.hp;
-      window.gameState.player.maxHp = myPlayer.maxHp;
-      window.gameState.player.block = myPlayer.block;
-      window.gameState.player.energy = myPlayer.energy;
       // ステータス効果（毒・筋力など）を反映する
       if (myPlayer.status && typeof myPlayer.status === "object" && window.gameState.player.status) {
         Object.assign(window.gameState.player.status, myPlayer.status);
@@ -236,40 +187,17 @@
       window.gameState.enemy.maxHp = gameState.enemy.maxHp;
       window.gameState.enemy.block = gameState.enemy.block;
       window.gameState.enemy.intent = gameState.enemy.intent;
-      // 敵のステータス効果（脆弱・毒など）を反映する
-      if (gameState.enemy.status && typeof gameState.enemy.status === "object" && window.gameState.enemy.status) {
-        Object.assign(window.gameState.enemy.status, gameState.enemy.status);
-      }
+      window.gameState.enemy.status = gameState.enemy.status;
     }
     // render()を呼んで画面を更新する
-    if (typeof window.renderBattle === "function") {
-      window.renderBattle();
-    } else if (typeof window.render === "function") {
+    if (typeof window.render === "function") {
       window.render();
     }
 
-    var overlay = document.getElementById("multi-overlay");
-    var waitingMsg = document.getElementById("multi-waiting-msg");
-    var resultArea = document.getElementById("multi-result-area");
-    var readyBtn = document.getElementById("multi-ready-btn");
     var endTurnBtn = document.getElementById("endTurnButton");
 
     if (gameState.phase === "selecting") {
-      // カード選択フェーズ: オーバーレイを表示して選択を促す
-      if (overlay) {
-        overlay.classList.remove("hidden");
-      }
-      if (waitingMsg) {
-        waitingMsg.classList.add("hidden");
-      }
-      if (resultArea) {
-        resultArea.classList.add("hidden");
-        resultArea.textContent = "";
-      }
-      if (readyBtn) {
-        readyBtn.disabled = false;
-      }
-      // ターン終了ボタンを再活性化する
+      // カード選択フェーズ: ターン終了ボタンを再活性化する
       if (endTurnBtn) {
         endTurnSent = false;
         endTurnBtn.disabled = false;
@@ -282,55 +210,15 @@
           c.classList.remove("selected");
         });
       }
-    } else if (gameState.phase === "resolving") {
-      // 解決フェーズ: ターン終了ボタンを非活性にして「解決中...」を表示する
+    } else if (gameState.phase === "resolving" || gameState.phase === "enemy_turn") {
+      // 解決フェーズ・敵ターン: ターン終了ボタンを非活性にする
       if (endTurnBtn) {
         endTurnBtn.disabled = true;
-      }
-      if (waitingMsg) {
-        waitingMsg.classList.add("hidden");
-      }
-      if (resultArea) {
-        resultArea.classList.remove("hidden");
-        resultArea.textContent = "解決中...";
       }
     } else if (gameState.phase === "finished") {
-      // 終了フェーズ: ゲーム結果を表示する
-      if (overlay) {
-        overlay.classList.remove("hidden");
-      }
-      if (resultArea) {
-        resultArea.classList.remove("hidden");
-        var enemy = gameState.enemy || {};
-        var players = gameState.players || {};
-        var allDead = Object.keys(players).length > 0 && Object.keys(players).every(function (id) {
-          return (players[id].hp || 0) <= 0;
-        });
-        if (allDead) {
-          resultArea.textContent = "💀 ゲームオーバー";
-        } else if ((enemy.hp || 0) <= 0) {
-          resultArea.textContent = "🎉 勝利！";
-        } else {
-          resultArea.textContent = "💀 ゲームオーバー";
-        }
-      }
-      if (readyBtn) {
-        readyBtn.disabled = true;
-      }
+      // 終了フェーズ: ターン終了ボタンを非活性にする
       if (endTurnBtn) {
         endTurnBtn.disabled = true;
-      }
-    } else if (gameState.phase === "enemy_turn") {
-      // 敵のターン: ターン終了ボタンを非活性にして「敵のターン...」を表示する
-      if (endTurnBtn) {
-        endTurnBtn.disabled = true;
-      }
-      if (waitingMsg) {
-        waitingMsg.classList.add("hidden");
-      }
-      if (resultArea) {
-        resultArea.classList.remove("hidden");
-        resultArea.textContent = "敵のターン...";
       }
     }
   });
@@ -351,12 +239,6 @@
     var endTurnBtn = document.getElementById("endTurnButton");
     if (endTurnBtn && endTurnSent) {
       endTurnBtn.textContent = "他のプレイヤーを待っています (" + readyCount + "/" + totalPlayers + ")";
-    }
-
-    // 待機メッセージに人数を反映する
-    var waitingMsg = document.getElementById("multi-waiting-msg");
-    if (waitingMsg) {
-      waitingMsg.textContent = "他のプレイヤーを待っています... (" + readyCount + "/" + totalPlayers + ")";
     }
 
     Object.keys(players).forEach(function (socketId) {
@@ -386,40 +268,6 @@
 
       listEl.appendChild(entry);
     });
-  }
-
-  // --- 敵情報パネルの更新 ---
-  function updateEnemyPanel(gameState) {
-    var enemy = gameState.enemy;
-    if (!enemy) {
-      return;
-    }
-    var hpEl = document.getElementById("multi-enemy-hp");
-    var maxHpEl = document.getElementById("multi-enemy-maxhp");
-    var blockEl = document.getElementById("multi-enemy-block");
-    var intentEl = document.getElementById("multi-enemy-intent");
-
-    // HP: 現在値 / 最大値 形式で表示する
-    if (hpEl) {
-      hpEl.textContent = "HP: " + (enemy.hp || 0) + " / ";
-    }
-    if (maxHpEl) {
-      maxHpEl.textContent = String(enemy.maxHp || 0);
-    }
-    if (blockEl) {
-      blockEl.textContent = "ブロック: " + (enemy.block || 0);
-    }
-    if (intentEl && enemy.intent) {
-      var intentText;
-      if (enemy.intent.type === "attack") {
-        intentText = "⚔ " + enemy.intent.value + " ダメージ";
-      } else if (enemy.intent.type === "block") {
-        intentText = "🛡 ブロック";
-      } else {
-        intentText = enemy.intent.type;
-      }
-      intentEl.textContent = "次の行動: " + intentText;
-    }
   }
 
   // --- API 公開関数 ---
@@ -452,11 +300,6 @@
     socket.emit("select_card", { roomId: currentRoomId, cardId: cardId });
   }
 
-  // player_ready を送信する（roomId は内部保持値を使用）
-  function sendPlayerReady() {
-    socket.emit("player_ready", { roomId: currentRoomId });
-  }
-
   // end_turn を送信する（roomId は内部保持値を使用）
   function sendEndTurn() {
     socket.emit("end_turn", { roomId: currentRoomId });
@@ -468,7 +311,6 @@
     onJoinError,
     startBattle,
     sendSelectCard,
-    sendPlayerReady,
     sendEndTurn
   };
 })();

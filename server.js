@@ -7,7 +7,7 @@ const path = require("path");
 const { Server } = require("socket.io");
 const RoomManager = require("./src/roomManager");
 const GameState = require("./src/gameState");
-const { initBattle, PLAYER_HP, PLAYER_MAX_HP, INITIAL_HAND_SIZE, playerSelectCard, playerReady, resolveCards, enemyAttack, drawCards, shuffleArray } = require("./src/gameLogic");
+const { initBattle, PLAYER_HP, PLAYER_MAX_HP, INITIAL_HAND_SIZE, playerSelectCard, playerReady, resolveCards, enemyAttack, applyCardToEnemy, drawCards, shuffleArray } = require("./src/gameLogic");
 
 const app = express();
 const server = http.createServer(app);
@@ -140,6 +140,8 @@ io.on("connection", (socket) => {
     }
 
     playerSelectCard(gs, socket.id, cardId);
+    // カード選択直後に敵HPとステータスをリアルタイムで反映してルーム全員に通知する
+    applyCardToEnemy(gs, socket.id);
     io.to(roomId).emit("game_state_update", gs.toJSON());
   });
 

@@ -122,6 +122,11 @@
       // game.js のバトルを開始しない（マルチモードではサーバー側でゲームを管理する）
       // サーバーへ battle_start イベントを送信してサーバー側でゲームを初期化する
       startBattle();
+      // クライアント側の初期表示（手札・山札・敵HP等）を初期化するために
+      // ソロのsetupBattle()相当の処理も呼び出す
+      if (window.BattleAPI && typeof window.BattleAPI.startBattle === "function") {
+        window.BattleAPI.startBattle(50);
+      }
     });
   }
 
@@ -189,6 +194,33 @@
 
     // 敵情報パネルを更新する
     updateEnemyPanel(gameState);
+
+    // サーバーから受け取った自分のプレイヤーデータをソロのgameStateに反映して画面を更新する
+    var myPlayer = gameState.players ? gameState.players[socket.id] : null;
+    if (myPlayer && window.gameState) {
+      // 手札をサーバーのカードIDリストからオブジェクト形式に変換して反映する
+      if (Array.isArray(myPlayer.hand)) {
+        window.gameState.player.hand = myPlayer.hand.map(function (cardId) {
+          return { id: cardId, upgraded: false };
+        });
+      }
+      window.gameState.player.hp = myPlayer.hp;
+      window.gameState.player.block = myPlayer.block;
+      window.gameState.player.energy = myPlayer.energy;
+    }
+    // サーバーの敵情報をソロのgameStateに反映する
+    if (gameState.enemy && window.gameState) {
+      window.gameState.enemy.hp = gameState.enemy.hp;
+      window.gameState.enemy.maxHp = gameState.enemy.maxHp;
+      window.gameState.enemy.block = gameState.enemy.block;
+      window.gameState.enemy.intent = gameState.enemy.intent;
+    }
+    // render()を呼んで画面を更新する
+    if (typeof window.renderBattle === "function") {
+      window.renderBattle();
+    } else if (typeof window.render === "function") {
+      window.render();
+    }
 
     var overlay = document.getElementById("multi-overlay");
     var waitingMsg = document.getElementById("multi-waiting-msg");

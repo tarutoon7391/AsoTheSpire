@@ -7,7 +7,7 @@ const path = require("path");
 const { Server } = require("socket.io");
 const RoomManager = require("./src/roomManager");
 const GameState = require("./src/gameState");
-const { initBattle, playerSelectCard, playerReady, resolveCards, enemyAttack } = require("./src/gameLogic");
+const { initBattle, PLAYER_HP, PLAYER_MAX_HP, INITIAL_HAND_SIZE, playerSelectCard, playerReady, resolveCards, enemyAttack, drawCards, shuffleArray } = require("./src/gameLogic");
 
 const app = express();
 const server = http.createServer(app);
@@ -69,8 +69,9 @@ io.on("connection", (socket) => {
       const gs = gameStates.get(roomId);
       if (gs) {
         gs.removePlayer(socket.id);
-        // ルームにプレイヤーがいなくなったらゲーム状態を破棄する
-        if (gs.players.size === 0) {
+        // ゲームが待機中または終了済みの場合のみgameStateを削除する
+        // 進行中のゲームはリダイレクト後の再接続に備えて状態を保持する
+        if (gs.players.size === 0 && (gs.phase === "waiting" || gs.phase === "finished")) {
           gameStates.delete(roomId);
         }
       }
@@ -78,9 +79,11 @@ io.on("connection", (socket) => {
   });
 
   // battle_start イベント：ルーム内の全員にinitBattleを実行してgame_state_updateをブロードキャストする
-  // payload: { roomId: string }
+  // ゲームがすでに進行中の場合はこのsocketを既存のゲームに再参加させて現在の状態を返す
+  // payload: { roomId: string, playerName: string }
   socket.on("battle_start", (payload) => {
     const roomId = String(payload?.roomId || "").trim();
+    const playerName = String(payload?.playerName || "").trim();
     const roomView = roomManager.getRoomView(roomId);
 
     if (!roomView) {
@@ -88,20 +91,41 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // ゲーム状態が未作成なら新規作成し、ルーム参加者をすべて登録する
+    // Socket.io の room に参加させる（リダイレクト後の再接続でも有効にする）
+    socket.join(roomId);
+
     if (!gameStates.has(roomId)) {
+      // ゲーム状態が未作成なら新規作成してバトルを初期化する
       const gs = new GameState(roomId);
       roomView.players.forEach((p) => gs.addPlayer(p.socketId, p.playerName));
       gameStates.set(roomId, gs);
+      initBattle(gs);
+
+      console.log(`ルーム ${roomId} のバトルを開始`);
+      io.to(roomId).emit("game_state_update", gs.toJSON());
+      // ルーム全員を game.html?mode=multi にリダイレクトさせる
+      io.to(roomId).emit("battle_redirect", { redirect: "/game.html?mode=multi" });
+    } else {
+      // ゲームがすでに進行中 → このsocketを既存ゲームに再接続させる
+      const gs = gameStates.get(roomId);
+
+      if (!gs.players.has(socket.id)) {
+        // gameStateに存在しないプレイヤーを追加して初期化する（リダイレクト後の再接続）
+        gs.addPlayer(socket.id, playerName || socket.id);
+        const player = gs.players.get(socket.id);
+        player.hp = PLAYER_HP;
+        player.maxHp = PLAYER_MAX_HP;
+        player.energy = player.maxEnergy || 3;
+        player.hand = [];
+        player.discard = [];
+        shuffleArray(player.deck);
+        drawCards(player, INITIAL_HAND_SIZE);
+      }
+
+      console.log(`ルーム ${roomId} にプレイヤー（${socket.id}）が再接続`);
+      // 現在のゲーム状態をこのsocketだけに送信する
+      socket.emit("game_state_update", gs.toJSON());
     }
-
-    const gs = gameStates.get(roomId);
-    initBattle(gs);
-
-    console.log(`ルーム ${roomId} のバトルを開始`);
-    io.to(roomId).emit("game_state_update", gs.toJSON());
-    // ルーム全員を game.html?mode=multi にリダイレクトさせる
-    io.to(roomId).emit("battle_redirect", { redirect: "/game.html?mode=multi" });
   });
 
   // select_card イベント：プレイヤーがカードを選択する

@@ -1335,8 +1335,8 @@ async function animateHandToDiscardAtEndTurn() {
 // ターン終了処理
 async function endTurn() {
   // マルチモードの場合はソロのターン処理を実行しない
-  const _multiParams = new URLSearchParams(window.location.search);
-  if (_multiParams.get("mode") === "multi") {
+  const multiParams = new URLSearchParams(window.location.search);
+  if (multiParams.get("mode") === "multi") {
     return;
   }
 

@@ -6,65 +6,6 @@
     <title>AsoTheSpire - バトル</title>
     <link rel="stylesheet" href="./style.css" />
     <style>
-      /* マルチプレイ用オーバーレイ */
-      #multi-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        z-index: 200;
-        background: rgba(13, 13, 13, 0.88);
-        border-bottom: 2px solid #c8a96e;
-        padding: 0.75rem 1.25rem;
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        flex-wrap: wrap;
-      }
-      #multi-overlay.hidden {
-        display: none;
-      }
-      #multi-overlay-msg {
-        color: #e8d9b0;
-        font-size: 1rem;
-        flex: 0 0 auto;
-      }
-      #multi-ready-btn {
-        padding: 0.4rem 1.2rem;
-        font-size: 0.95rem;
-        border: 2px solid #c8a96e;
-        background: transparent;
-        color: #e8d9b0;
-        cursor: pointer;
-        border-radius: 4px;
-        transition: background 0.2s, color 0.2s;
-        flex: 0 0 auto;
-      }
-      #multi-ready-btn:hover:not(:disabled) {
-        background: #c8a96e;
-        color: #1a1a2e;
-      }
-      #multi-ready-btn:disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
-      }
-      #multi-waiting-msg {
-        color: #c8a96e;
-        font-size: 0.9rem;
-        flex: 0 0 auto;
-      }
-      #multi-waiting-msg.hidden {
-        display: none;
-      }
-      #multi-result-area {
-        color: #e8d9b0;
-        font-size: 0.9rem;
-        flex: 0 0 auto;
-      }
-      #multi-result-area.hidden {
-        display: none;
-      }
-
       /* マルチプレイ用プレイヤー状態パネル */
       #multi-players-panel {
         position: fixed;
@@ -104,33 +45,6 @@
         margin-left: 0.3rem;
       }
 
-      /* マルチプレイ用敵情報パネル */
-      #multi-enemy-panel {
-        position: fixed;
-        top: 0;
-        left: 0;
-        z-index: 199;
-        background: rgba(26, 26, 46, 0.85);
-        border-right: 1px solid #555;
-        border-bottom: 1px solid #555;
-        padding: 0.5rem 0.75rem;
-        font-size: 0.85rem;
-        color: #e8d9b0;
-        max-width: 200px;
-      }
-      #multi-enemy-panel.hidden {
-        display: none;
-      }
-      #multi-enemy-panel h3 {
-        font-size: 0.85rem;
-        color: #c8a96e;
-        margin-bottom: 0.4rem;
-      }
-      #multi-enemy-intent {
-        color: #f08080;
-        margin-top: 0.2rem;
-      }
-
       /* 手札カードの選択状態 */
       .hand-card.selected {
         outline: 3px solid #ffcc00;
@@ -139,22 +53,6 @@
     </style>
   </head>
   <body>
-    <!-- マルチプレイ用オーバーレイ（マルチモード時のみ表示） -->
-    <div id="multi-overlay" class="hidden">
-      <span id="multi-overlay-msg">カードを選択してください</span>
-      <button type="button" id="multi-ready-btn">準備完了</button>
-      <span id="multi-waiting-msg" class="hidden">他のプレイヤーを待っています... (1/1)</span>
-      <div id="multi-result-area" class="hidden"></div>
-    </div>
-
-    <!-- マルチプレイ用敵情報パネル（マルチモード時のみ表示） -->
-    <div id="multi-enemy-panel" class="hidden">
-      <h3>敵の状態</h3>
-      <div id="multi-enemy-hp">HP: - / <span id="multi-enemy-maxhp">-</span></div>
-      <div id="multi-enemy-block">ブロック: -</div>
-      <div id="multi-enemy-intent">次の行動: -</div>
-    </div>
-
     <!-- マルチプレイ用プレイヤー状態パネル（マルチモード時のみ表示） -->
     <div id="multi-players-panel" class="hidden">
       <h3>プレイヤー状態</h3>

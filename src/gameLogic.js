@@ -414,6 +414,79 @@ function enemyAttack(gameState) {
   }
 }
 
+/**
+ * カードが選択された時点で、敵へのダメージとステータス付与を即時計算して反映する。
+ * ブロック・ドロー・エネルギー回復・自己ステータス付与・パワー付与等は処理しない
+ * （これらは resolveCards でまとめて処理する）。
+ * 敵HPが0以下になってもフェーズを変更しない（フェーズ管理は resolveCards に任せる）。
+ * @param {GameState} gameState
+ * @param {string} socketId - カードを選択したプレイヤーのソケットID
+ */
+function applyCardToEnemy(gameState, socketId) {
+  const player = gameState.players.get(socketId);
+  if (!player) {
+    return;
+  }
+
+  const cardEntry = gameState.selectedCards.get(socketId);
+  if (!cardEntry) {
+    return;
+  }
+
+  let cardId, upgraded;
+  if (typeof cardEntry === "object" && cardEntry !== null) {
+    cardId = cardEntry.id;
+    upgraded = cardEntry.upgraded || false;
+  } else {
+    cardId = String(cardEntry);
+    upgraded = false;
+  }
+
+  const resolved = resolveCardEffect(cardId, upgraded);
+  if (!resolved) {
+    return;
+  }
+
+  const { effect } = resolved;
+  const enemy = gameState.enemy;
+
+  // --- 単純ダメージ（第3引数falseはdamageTakenThisTurnを更新しないことを示す）---
+  if (effect.damage !== undefined) {
+    const dmg = calculateModifiedDamage(effect.damage, player.status, enemy.status);
+    applyDamageToTarget(enemy, dmg, false);
+  }
+
+  // --- マルチヒットダメージ（第3引数falseはdamageTakenThisTurnを更新しないことを示す）---
+  if (Array.isArray(effect.multiDamage)) {
+    effect.multiDamage.forEach((baseDmg) => {
+      const dmg = calculateModifiedDamage(baseDmg, player.status, enemy.status);
+      applyDamageToTarget(enemy, dmg, false);
+    });
+  }
+
+  // --- damageTakenThisTurn×倍率ダメージ（第3引数falseはdamageTakenThisTurnを更新しないことを示す）---
+  if (effect.damageFromTakenMultiplier !== undefined) {
+    const baseDmg = (player.damageTakenThisTurn || 0) * effect.damageFromTakenMultiplier;
+    const dmg = calculateModifiedDamage(baseDmg, player.status, enemy.status);
+    applyDamageToTarget(enemy, dmg, false);
+  }
+
+  // --- 手札全廃棄×倍率ダメージ（第3引数falseはdamageTakenThisTurnを更新しないことを示す）---
+  if (effect.damagePerExhaustedHand !== undefined) {
+    const exhaustedCount = player.hand.length;
+    const baseDmg = exhaustedCount * effect.damagePerExhaustedHand;
+    const dmg = calculateModifiedDamage(baseDmg, player.status, enemy.status);
+    applyDamageToTarget(enemy, dmg, false);
+  }
+
+  // --- 敵へのステータス付与 ---
+  if (effect.applyStatusToEnemy) {
+    Object.entries(effect.applyStatusToEnemy).forEach(([statusId, amount]) => {
+      addStatus(enemy, statusId, amount);
+    });
+  }
+}
+
 module.exports = {
   PLAYER_HP,
   PLAYER_MAX_HP,
@@ -424,6 +497,7 @@ module.exports = {
   playerReady,
   resolveCards,
   enemyAttack,
+  applyCardToEnemy,
   drawCards,
   shuffleArray
 };

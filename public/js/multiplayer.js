@@ -120,7 +120,12 @@
       }
 
       // game.js のバトルを開始しない（マルチモードではサーバー側でゲームを管理する）
-      // サーバーへ battle_start イベントを送信してサーバー側でゲームを初期化する
+      // ページリダイレクト後に新しいsocketがroomに参加できるよう join_room を再送する
+      var session = loadMultiSession();
+      if (session.roomId && session.playerName) {
+        joinRoom(session.roomId, session.playerName);
+      }
+      // サーバーへ battle_start イベントを送信してサーバー側でゲームに接続する
       startBattle();
       // クライアント側の初期表示（手札・山札・敵HP等）を初期化するために
       // ソロのsetupBattle()相当の処理も呼び出す
@@ -177,6 +182,11 @@
   // --- battle_redirect 受信時のリダイレクト処理 ---
   socket.on("battle_redirect", function (data) {
     if (data && data.redirect) {
+      // すでに同じページにいる場合は再リダイレクトしない（再接続時の無限ループを防ぐ）
+      var targetPath = data.redirect.split("?")[0];
+      if (window.location.pathname === targetPath) {
+        return;
+      }
       window.location.href = data.redirect;
     }
   });
@@ -205,8 +215,20 @@
         });
       }
       window.gameState.player.hp = myPlayer.hp;
+      window.gameState.player.maxHp = myPlayer.maxHp;
       window.gameState.player.block = myPlayer.block;
       window.gameState.player.energy = myPlayer.energy;
+      // ステータス効果（毒・筋力など）を反映する
+      if (myPlayer.status && typeof myPlayer.status === "object" && window.gameState.player.status) {
+        Object.assign(window.gameState.player.status, myPlayer.status);
+      }
+      // 山札・捨て札の枚数を反映する（render()での枚数表示に使用）
+      if (typeof myPlayer.deckCount === "number") {
+        window.gameState.player.drawPile = new Array(myPlayer.deckCount);
+      }
+      if (typeof myPlayer.discardCount === "number") {
+        window.gameState.player.discardPile = new Array(myPlayer.discardCount);
+      }
     }
     // サーバーの敵情報をソロのgameStateに反映する
     if (gameState.enemy && window.gameState) {
@@ -214,6 +236,10 @@
       window.gameState.enemy.maxHp = gameState.enemy.maxHp;
       window.gameState.enemy.block = gameState.enemy.block;
       window.gameState.enemy.intent = gameState.enemy.intent;
+      // 敵のステータス効果（脆弱・毒など）を反映する
+      if (gameState.enemy.status && typeof gameState.enemy.status === "object" && window.gameState.enemy.status) {
+        Object.assign(window.gameState.enemy.status, gameState.enemy.status);
+      }
     }
     // render()を呼んで画面を更新する
     if (typeof window.renderBattle === "function") {
@@ -415,9 +441,10 @@
     socket.on("join_error", callback);
   }
 
-  // battle_start を送信してゲーム開始を通知する（roomId は内部保持値を使用）
+  // battle_start を送信してゲーム開始を通知する（roomId・playerName は内部保持値を使用）
   function startBattle() {
-    socket.emit("battle_start", { roomId: currentRoomId });
+    var session = loadMultiSession();
+    socket.emit("battle_start", { roomId: currentRoomId, playerName: session.playerName });
   }
 
   // select_card を送信する（roomId は内部保持値を使用）

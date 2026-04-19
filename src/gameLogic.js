@@ -415,6 +415,9 @@ function enemyAttack(gameState) {
 }
 
 module.exports = {
+  PLAYER_HP,
+  PLAYER_MAX_HP,
+  INITIAL_HAND_SIZE: 5,
   initBattle,
   startSelectPhase,
   playerSelectCard,

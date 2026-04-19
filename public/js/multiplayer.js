@@ -44,6 +44,9 @@
   var currentRoomId = "";
   var isMultiMode = false;
   var endTurnSent = false;
+  // 直前に受信した game_state_update のフェーズを保持する。
+  // selecting への遷移が「enemy_turn → selecting」かどうかを判定するために使用する。
+  var prevPhase = null;
 
   // URLパラメータ ?mode=multi の判定
   (function detectMode() {
@@ -156,6 +159,16 @@
     // multi-players-panel に全プレイヤーの HP・ブロックを表示する
     updatePlayersPanel(gameState);
 
+    // バグ③修正: 敵情報をプレイヤー情報より先に window.gameState に反映し、
+    // その後にプレイヤー情報を反映してから render() を呼ぶ順序を保証する。
+    // サーバーの敵情報をソロのgameStateに反映する（先に反映する）
+    if (gameState.enemy && window.gameState) {
+      window.gameState.enemy.hp = gameState.enemy.hp;
+      window.gameState.enemy.maxHp = gameState.enemy.maxHp;
+      window.gameState.enemy.block = gameState.enemy.block;
+      window.gameState.enemy.intent = gameState.enemy.intent;
+      window.gameState.enemy.status = gameState.enemy.status;
+    }
     // サーバーから受け取った自分のプレイヤーデータをソロのgameStateに反映して画面を更新する
     var myPlayer = gameState.players ? gameState.players[socket.id] : null;
     if (myPlayer && window.gameState) {
@@ -181,15 +194,7 @@
         window.gameState.player.discardPile = new Array(myPlayer.discardCount);
       }
     }
-    // サーバーの敵情報をソロのgameStateに反映する
-    if (gameState.enemy && window.gameState) {
-      window.gameState.enemy.hp = gameState.enemy.hp;
-      window.gameState.enemy.maxHp = gameState.enemy.maxHp;
-      window.gameState.enemy.block = gameState.enemy.block;
-      window.gameState.enemy.intent = gameState.enemy.intent;
-      window.gameState.enemy.status = gameState.enemy.status;
-    }
-    // render()を呼んで画面を更新する
+    // 敵・プレイヤー反映後に render() を呼んで画面を更新する
     if (typeof window.render === "function") {
       window.render();
     }
@@ -197,18 +202,22 @@
     var endTurnBtn = document.getElementById("endTurnButton");
 
     if (gameState.phase === "selecting") {
-      // カード選択フェーズ: ターン終了ボタンを再活性化する
-      if (endTurnBtn) {
-        endTurnSent = false;
-        endTurnBtn.disabled = false;
-        endTurnBtn.textContent = "ターン終了";
-      }
-      // 手札の選択状態をリセットする
-      var hand = document.getElementById("hand");
-      if (hand) {
-        hand.querySelectorAll(".hand-card.selected").forEach(function (c) {
-          c.classList.remove("selected");
-        });
+      // バグ②修正: 直前のphaseが 'enemy_turn' のとき（＝新しいターン開始時）のみ
+      // endTurnSent をリセットしてターン終了ボタンを再活性化する。
+      // それ以外の selecting 遷移（カード選択直後など）ではボタン状態を変更しない。
+      if (prevPhase === "enemy_turn") {
+        if (endTurnBtn) {
+          endTurnSent = false;
+          endTurnBtn.disabled = false;
+          endTurnBtn.textContent = "ターン終了";
+        }
+        // 新しいターン開始時のみ手札の選択状態をリセットする
+        var hand = document.getElementById("hand");
+        if (hand) {
+          hand.querySelectorAll(".hand-card.selected").forEach(function (c) {
+            c.classList.remove("selected");
+          });
+        }
       }
     } else if (gameState.phase === "resolving" || gameState.phase === "enemy_turn") {
       // 解決フェーズ・敵ターン: ターン終了ボタンを非活性にする
@@ -221,6 +230,9 @@
         endTurnBtn.disabled = true;
       }
     }
+
+    // 次回判定用に現在のフェーズを保持する
+    prevPhase = gameState.phase;
   });
 
   // --- プレイヤーパネルの更新 ---
@@ -244,12 +256,19 @@
     Object.keys(players).forEach(function (socketId) {
       var p = players[socketId];
       var isReady = readyPlayers.indexOf(socketId) !== -1;
+      var isSelf = socketId === socket.id;
       var entry = document.createElement("div");
       entry.className = "multi-player-entry";
 
       var name = document.createElement("span");
       name.className = "multi-player-name";
-      name.textContent = p.name || socketId;
+      // バグ①修正: 自分自身（socket.id 一致）のエントリには「自分」と表示し、
+      // 相手のエントリには相手のプレイヤー名を表示する。socket.id で識別する。
+      if (isSelf) {
+        name.textContent = "自分";
+      } else {
+        name.textContent = p.name || socketId;
+      }
       entry.appendChild(name);
 
       // 準備完了ならチェックマークを表示する

@@ -339,9 +339,8 @@ function resolveCards(gameState) {
 
   // 敵のターン終了処理
   applyEndOfTurnStatusEffects(gameState.enemy);
-  if (!gameState.enemy.powers || !gameState.enemy.powers.barricade) {
-    gameState.enemy.block = 0;
-  }
+  // バグ④修正: 敵のブロックは「次の敵ターン開始時（enemyAttack 先頭）」にリセットするため、
+  // ここではリセットしない。プレイヤーターン中は敵のブロックを維持する。
 
   // 選択状態と準備状態をリセットする
   gameState.selectedCards = new Map();
@@ -364,6 +363,14 @@ function resolveCards(gameState) {
 function enemyAttack(gameState) {
   const enemy = gameState.enemy;
 
+  // バグ④修正: 敵のブロックリセットを enemyAttack() の先頭に移動する。
+  // 「敵がブロックする → プレイヤーターン中は敵ブロック維持
+  //   → 次の敵ターン開始時にブロックリセット → 攻撃」の順にすることで、
+  // プレイヤーのターン中に敵のブロックが消えてしまう不具合を防ぐ。
+  if (!enemy.powers || !enemy.powers.barricade) {
+    enemy.block = 0;
+  }
+
   if (enemy.intent && enemy.intent.type === "attack") {
     gameState.players.forEach((player) => {
       const dmg = calculateModifiedDamage(enemy.intent.value, enemy.status, player.status);
@@ -378,11 +385,6 @@ function enemyAttack(gameState) {
   } else {
     const value = Math.floor(Math.random() * 5) + 8; // 8〜12
     enemy.intent = { type: "block", value };
-  }
-
-  // 敵のブロックリセット
-  if (!enemy.powers || !enemy.powers.barricade) {
-    enemy.block = 0;
   }
 
   // 各プレイヤーのターン開始処理

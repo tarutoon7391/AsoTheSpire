@@ -119,6 +119,37 @@ class GameState {
   }
 
   /**
+   * 既存プレイヤーのソケットIDを新しいIDに付け替える。
+   * リダイレクト後の再接続でsocket.idが変わった場合に使用する。
+   * @param {string} oldSocketId - 旧ソケットID
+   * @param {string} newSocketId - 新ソケットID
+   */
+  remapPlayer(oldSocketId, newSocketId) {
+    if (!this.players.has(oldSocketId)) {
+      return;
+    }
+    const playerData = this.players.get(oldSocketId);
+    this.players.delete(oldSocketId);
+    this.players.set(newSocketId, playerData);
+
+    if (this.selectedCards.has(oldSocketId)) {
+      const card = this.selectedCards.get(oldSocketId);
+      this.selectedCards.delete(oldSocketId);
+      this.selectedCards.set(newSocketId, card);
+    }
+
+    if (this.readyPlayers.has(oldSocketId)) {
+      this.readyPlayers.delete(oldSocketId);
+      this.readyPlayers.add(newSocketId);
+    }
+
+    if (this.rewardSelected.has(oldSocketId)) {
+      this.rewardSelected.delete(oldSocketId);
+      this.rewardSelected.add(newSocketId);
+    }
+  }
+
+  /**
    * プレイヤーを削除する。関連する選択・準備状態もクリアする。
    * @param {string} socketId - ソケットID
    */

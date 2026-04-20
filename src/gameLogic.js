@@ -141,6 +141,7 @@ function startSelectPhase(gameState) {
 
 /**
  * プレイヤーがカードを選択する。
+ * カードのコストを消費してselectedCardsに記録する。
  * @param {GameState} gameState
  * @param {string} socketId - 選択したプレイヤーのソケットID
  * @param {string} cardId - 選択したカードのID
@@ -148,6 +149,12 @@ function startSelectPhase(gameState) {
 function playerSelectCard(gameState, socketId, cardId) {
   if (!gameState.players.has(socketId)) {
     return;
+  }
+  const player = gameState.players.get(socketId);
+  // カードのコストをエネルギーから消費する
+  const cardDef = CARD_LIBRARY[cardId];
+  if (cardDef && typeof cardDef.cost === "number") {
+    player.energy = Math.max(0, player.energy - cardDef.cost);
   }
   gameState.selectedCards.set(socketId, cardId);
 }
@@ -309,16 +316,6 @@ function resolveCards(gameState) {
     // 継続ステータス効果（毒・火傷・スタック減少）
     applyEndOfTurnStatusEffects(player);
 
-    // barricadeを持たないプレイヤーのブロックをリセット
-    if (!player.powers.barricade) {
-      player.block = 0;
-    }
-
-    // demonFormによるターン開始時の筋力上昇（次のターン開始扱いで適用）
-    if (player.powers.demonForm) {
-      addStatus(player, "strength", 2);
-    }
-
     // angerの一時筋力をターン終了時に減少させる
     if (angerUsed.has(socketId)) {
       player.status.strength = Math.max(0, player.status.strength - angerUsed.get(socketId));
@@ -327,21 +324,13 @@ function resolveCards(gameState) {
     // このターン受けたダメージをリセット
     player.damageTakenThisTurn = 0;
 
-    // 手札を捨て札に移動
+    // 手札を捨て札に移動（ドロー・エネルギー・ブロックリセットはenemyAttackで行う）
     player.discard.push(...player.hand);
     player.hand = [];
-
-    // 次のターンのために5枚ドロー
-    drawCards(player, 5);
-
-    // エネルギーをリセット
-    player.energy = player.maxEnergy || 3;
   });
 
-  // 敵のターン終了処理
+  // 敵のターン終了処理（ステータス効果のみ。ブロックリセットはenemyAttack先頭で行う）
   applyEndOfTurnStatusEffects(gameState.enemy);
-  // バグ④修正: 敵のブロックは「次の敵ターン開始時（enemyAttack 先頭）」にリセットするため、
-  // ここではリセットしない。プレイヤーターン中は敵のブロックを維持する。
 
   // 選択状態と準備状態をリセットする
   gameState.selectedCards = new Map();
@@ -364,19 +353,22 @@ function resolveCards(gameState) {
 function enemyAttack(gameState) {
   const enemy = gameState.enemy;
 
-  // バグ④修正: 敵のブロックリセットを enemyAttack() の先頭に移動する。
-  // 「敵がブロックする → プレイヤーターン中は敵ブロック維持
-  //   → 次の敵ターン開始時にブロックリセット → 攻撃」の順にすることで、
-  // プレイヤーのターン中に敵のブロックが消えてしまう不具合を防ぐ。
+  // 前ターンの敵ブロックをリセットする（敵ターン開始時に消える）
   if (!enemy.powers || !enemy.powers.barricade) {
     enemy.block = 0;
   }
 
-  if (enemy.intent && enemy.intent.type === "attack") {
-    gameState.players.forEach((player) => {
-      const dmg = calculateModifiedDamage(enemy.intent.value, enemy.status, player.status);
-      applyDamageToTarget(player, dmg, true);
-    });
+  // intentに応じた敵行動を実行する
+  if (enemy.intent) {
+    if (enemy.intent.type === "attack") {
+      gameState.players.forEach((player) => {
+        const dmg = calculateModifiedDamage(enemy.intent.value, enemy.status, player.status);
+        applyDamageToTarget(player, dmg, true);
+      });
+    } else if (enemy.intent.type === "block") {
+      // 敵がブロック行動をとる場合はブロック値を加算する
+      enemy.block += enemy.intent.value;
+    }
   }
 
   // 次のインテントをランダムに設定する（50%ずつ attack/block）
@@ -398,10 +390,12 @@ function enemyAttack(gameState) {
     player.energy = player.maxEnergy || 3;
     // このターン受けたダメージをリセット
     player.damageTakenThisTurn = 0;
-    // 手札を捨て札に移動して5枚ドロー
-    player.discard.push(...player.hand);
-    player.hand = [];
+    // 5枚ドロー（resolveCardsで手札は捨て札に移動済みのため空になっている）
     drawCards(player, 5);
+    // demonFormによるターン開始時の筋力上昇
+    if (player.powers && player.powers.demonForm) {
+      addStatus(player, "strength", 2);
+    }
   });
 
   // 選択状態と準備状態をリセットする

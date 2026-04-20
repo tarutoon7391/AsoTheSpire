@@ -62,7 +62,12 @@ class GameState {
       maxEnergy: 3,
       status: createStatusState(),
       damageTakenThisTurn: 0,
-      powers: {}
+      powers: {},
+      // 切断中フラグ：リダイレクト中など一時的に切断したプレイヤーを示す。
+      // ゲーム進行中はプレイヤーデータを保持しつつ、準備完了判定などから除外する。
+      disconnected: false,
+      // anger等で付与した一時的な筋力上昇量。ターン終了時に減算する。
+      temporaryStrength: 0
     });
   }
 
@@ -93,6 +98,10 @@ class GameState {
     if (!playerData.powers || typeof playerData.powers !== "object") {
       playerData.powers = {};
     }
+    // disconnected フィールド（後方互換のため未定義なら false で補完する）
+    if (typeof playerData.disconnected !== "boolean") playerData.disconnected = false;
+    // temporaryStrength フィールド（後方互換のため未定義なら 0 で補完する）
+    if (typeof playerData.temporaryStrength !== "number") playerData.temporaryStrength = 0;
     return playerData;
   }
 
@@ -129,6 +138,8 @@ class GameState {
       return;
     }
     const playerData = this.players.get(oldSocketId);
+    // 再接続したので切断フラグを下ろす
+    playerData.disconnected = false;
     this.players.delete(oldSocketId);
     this.players.set(newSocketId, playerData);
 
@@ -150,6 +161,23 @@ class GameState {
   }
 
   /**
+   * プレイヤーを切断状態にする。データは保持したまま準備完了判定などから除外する。
+   * リダイレクト中の一時的な切断に備えて、ゲーム進行中はremovePlayerではなくこちらを呼ぶ。
+   * @param {string} socketId
+   */
+  markDisconnected(socketId) {
+    if (!this.players.has(socketId)) {
+      return;
+    }
+    const playerData = this.players.get(socketId);
+    playerData.disconnected = true;
+    // 解決待ちの選択・準備状態はクリアしておく（残しておくと進行が止まる可能性があるため）
+    this.selectedCards.delete(socketId);
+    this.readyPlayers.delete(socketId);
+    this.rewardSelected.delete(socketId);
+  }
+
+  /**
    * プレイヤーを削除する。関連する選択・準備状態もクリアする。
    * @param {string} socketId - ソケットID
    */
@@ -161,20 +189,35 @@ class GameState {
   }
 
   /**
-   * 全プレイヤーが準備完了かどうかを返す。
-   * プレイヤーが0人の場合は false を返す。
+   * 接続中の全プレイヤーが準備完了かどうかを返す。
+   * 切断中（disconnected）プレイヤーは除外する。
+   * 接続中プレイヤーが0人の場合は false を返す。
    * @returns {boolean}
    */
   allPlayersReady() {
-    if (this.players.size === 0) {
-      return false;
-    }
-    for (const socketId of this.players.keys()) {
+    let connectedCount = 0;
+    for (const [socketId, playerData] of this.players.entries()) {
+      if (playerData.disconnected) {
+        continue;
+      }
+      connectedCount += 1;
       if (!this.readyPlayers.has(socketId)) {
         return false;
       }
     }
-    return true;
+    return connectedCount > 0;
+  }
+
+  /**
+   * 接続中（disconnected=false）のプレイヤー数を返す。
+   * @returns {number}
+   */
+  connectedPlayerCount() {
+    let count = 0;
+    this.players.forEach((p) => {
+      if (!p.disconnected) count += 1;
+    });
+    return count;
   }
 
   /**
@@ -185,6 +228,8 @@ class GameState {
   toJSON() {
     const players = {};
     this.players.forEach((playerData, socketId) => {
+      // 古いゲーム状態に新フィールドが欠けている場合の互換補完（マイグレーション）
+      GameState.migratePlayerData(playerData);
       players[socketId] = {
         name: playerData.name,
         hp: playerData.hp,
@@ -197,7 +242,8 @@ class GameState {
         maxEnergy: playerData.maxEnergy,
         status: { ...playerData.status },
         damageTakenThisTurn: playerData.damageTakenThisTurn,
-        powers: { ...playerData.powers }
+        powers: { ...playerData.powers },
+        disconnected: playerData.disconnected
       };
     });
 
@@ -223,7 +269,9 @@ class GameState {
       selectedCards,
       readyPlayers: Array.from(this.readyPlayers),
       readyCount: this.readyPlayers.size,
-      totalPlayers: this.players.size
+      totalPlayers: this.players.size,
+      // 接続中（disconnected=false）プレイヤー数。待機表示の分母に使う。
+      connectedCount: this.connectedPlayerCount()
     };
   }
 }

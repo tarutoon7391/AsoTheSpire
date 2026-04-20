@@ -993,6 +993,36 @@ function resolveCardEffect(card) {
 
 // 手札のカードを使用する
 async function playCard(handIndex, cardElement) {
+  // マルチモードではローカルでカード効果を適用せず、
+  // サーバーに使用要求のみ送信する（カード効果はサーバー権威で処理される）。
+  // ローカル状態はサーバーからの game_state_update で同期される。
+  const isMultiMode = new URLSearchParams(window.location.search).get("mode") === "multi";
+  if (isMultiMode) {
+    if (window.MultiplayerAPI?.isEndTurnSent?.()) {
+      return false;
+    }
+    const cardEntry = gameState.player.hand[handIndex];
+    if (!cardEntry) {
+      return false;
+    }
+    const cardId = typeof cardEntry === "string" ? cardEntry : cardEntry.id;
+    // ローカルのエネルギー値で事前チェック（サーバー側でも検証される）
+    const cardDefMulti = window.CARD_LIBRARY ? window.CARD_LIBRARY[cardId] : null;
+    const costMulti = cardDefMulti ? (cardDefMulti.cost || 0) : 0;
+    if ((gameState.player.energy || 0) < costMulti) {
+      elements.message.textContent = "マナ不足でカードを使えない";
+      return false;
+    }
+    if (window.MultiplayerAPI && typeof window.MultiplayerAPI.sendSelectCard === "function") {
+      window.MultiplayerAPI.sendSelectCard(cardId);
+    }
+    // ドラッグ演出のために cardElement を捨て札へ飛ばすアニメーションだけ走らせる
+    if (cardElement) {
+      try { await animateCardToDiscard(cardElement); } catch (_) { /* 演出失敗は無視 */ }
+    }
+    return true;
+  }
+
   if (!isBattleActive() || gameState.isAnimating) {
     return false;
   }
@@ -1129,9 +1159,7 @@ async function commitDraggedCard() {
 
   const handIndex = drag.handIndex;
   const dragElement = drag.element;
-  // マルチプレイヤー通知用にカードIDをドラッグ状態クリア前に保存する
-  const dragCardId = drag.cardId;
-
+  // ドラッグ状態をクリアする
   drag.active = false;
   drag.handIndex = -1;
   drag.cardId = "";
@@ -1153,11 +1181,9 @@ async function commitDraggedCard() {
     dragElement.style.opacity = "";
     dragElement.style.pointerEvents = "";
     render();
-  } else if (window.MultiplayerAPI && typeof window.MultiplayerAPI.sendSelectCard === "function") {
-    // マルチモード時：ドラッグでカードが発動されたことをサーバーに通知する
-    // endTurnSent チェックは sendSelectCard 内部で行う
-    window.MultiplayerAPI.sendSelectCard(dragCardId);
   }
+  // マルチモードのカード送信は playCard 内部で sendSelectCard を呼ぶようになったため、
+  // ここで重複送信しないようにする（以前の二重送信バグの修正）。
   dragElement.remove();
 }
 
@@ -1206,7 +1232,12 @@ function handleCardPointerDown(event, handIndex, cardId) {
   if (event.pointerType === "touch") {
     event.preventDefault();
     const button = event.currentTarget;
-    playCard(handIndex, button);
+    // マルチモードのタップ操作は multiplayer.js の click ハンドラに任せる
+    // （二重送信防止）。ソロモードはここでカードを直接使用する。
+    const isMultiModeTouch = new URLSearchParams(window.location.search).get("mode") === "multi";
+    if (!isMultiModeTouch) {
+      playCard(handIndex, button);
+    }
     return;
   }
 
@@ -1622,6 +1653,8 @@ window.render = render;
 window.gameState = gameState;
 window.showRewardSection = showRewardSection;
 window.showAnnouncement = showAnnouncement;
+// マルチモードで敵ターン死亡時にサーバーから受け取って敗北画面を出すため公開する
+window.showEndOverlay = showEndOverlay;
 
 // デッキオーバーレイを開く
 function openDeckOverlay() {

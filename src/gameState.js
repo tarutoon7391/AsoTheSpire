@@ -252,6 +252,10 @@ class GameState {
       selectedCards[socketId] = cardId;
     });
 
+    // 古いゲーム状態に欠けている敵フィールドを補完する（マイグレーション）。
+    // status・intent が未定義のままシリアライズされるとクライアント側で
+    // undefined を踏んで描画やインテント表示が壊れるため、ここで補完しておく。
+    GameState.migrateEnemyData(this.enemy);
     const enemy = this.enemy;
 
     return {

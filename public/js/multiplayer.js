@@ -202,8 +202,8 @@
       // バグ⑤修正: energy・block・hand・status は新ターン開始時（enemy_turn → selecting 遷移）のみ反映する。
       // プレイヤーがまだ行動中（selecting フェーズかつターン終了前）のときは上書きしない。
       var isNewTurnStart = (prevPhase === "enemy_turn" && gameState.phase === "selecting");
-      var isNotPlayerTurn = (gameState.phase !== "selecting") || endTurnSent;
-      if (isNewTurnStart || isNotPlayerTurn) {
+      var shouldUpdatePlayerState = isNewTurnStart || (gameState.phase !== "selecting") || endTurnSent;
+      if (shouldUpdatePlayerState) {
         window.gameState.player.block = myPlayer.block;
         window.gameState.player.energy = myPlayer.energy;
         // 手札をサーバーのカードIDリストからオブジェクト形式に変換して反映する

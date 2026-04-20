@@ -242,7 +242,10 @@ io.on("connection", (socket) => {
     gs.rewardSelected.add(socket.id);
 
     // 全員が報酬カードを選択したら次のバトルを開始する
-    if (gs.rewardSelected.size >= gs.players.size && gs.players.size > 0) {
+    // 現在も接続中のプレイヤー全員が選択済みかどうかを確認する
+    const allCurrentPlayersSelected = gs.players.size > 0 &&
+      Array.from(gs.players.keys()).every((id) => gs.rewardSelected.has(id));
+    if (allCurrentPlayersSelected) {
       gs.rewardSelected = new Set();
       initBattle(gs);
       console.log(`ルーム ${roomId} の全員が報酬選択完了 → 次のバトル開始`);

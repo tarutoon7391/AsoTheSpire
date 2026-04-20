@@ -264,9 +264,10 @@
           });
         }
         // ENEMY TURN と対になる YOUR TURN アナウンスを表示する。
-        // ただし初回ロード（prevPhase === null）では選択中フェーズへの遷移ではなく
-        // 単なる状態同期なので表示しない。
-        if (prevPhase !== null) {
+        // resolving や finished（新バトル開始等）からの遷移では表示しない。
+        // ENEMY TURN 表示の直後の selecting 復帰時のみに限定するため、
+        // prevPhase が "enemy_turn" のときに限って表示する。
+        if (prevPhase === "enemy_turn") {
           window.showAnnouncement?.("YOUR TURN", "player");
         }
       }

@@ -199,8 +199,10 @@
       window.gameState.player.hp = myPlayer.hp;
       window.gameState.player.maxHp = myPlayer.maxHp;
 
-      // energy・block・hand・status の上書きは新ターン開始時またはバトル開始直後のみ行う。
-      // それ以外のタイミング（カード選択中・resolving・enemy_turn等）では上書きしない。
+      // energy・block・hand・status の上書きは以下の2つのタイミングのみ行う：
+      // 1. enemy_turn → selecting 遷移（新ターン開始時）
+      // 2. null → selecting 遷移（バトル開始直後の初回更新時）
+      // それ以外（selecting中のカード選択・resolving・enemy_turn等）は false のためスキップする。
       var isNewTurnStart = (prevPhase === "enemy_turn" && gameState.phase === "selecting");
       var isBattleInit = (prevPhase === null && gameState.phase === "selecting");
       var shouldUpdatePlayerState = isNewTurnStart || isBattleInit;

@@ -390,9 +390,7 @@ function enemyAttack(gameState) {
     player.energy = player.maxEnergy || 3;
     // このターン受けたダメージをリセット
     player.damageTakenThisTurn = 0;
-    // 手札を捨て札に移動して5枚ドロー（resolveCardsで手札は既に空になっている）
-    player.discard.push(...player.hand);
-    player.hand = [];
+    // 5枚ドロー（resolveCardsで手札は捨て札に移動済みのため空になっている）
     drawCards(player, 5);
     // demonFormによるターン開始時の筋力上昇
     if (player.powers && player.powers.demonForm) {

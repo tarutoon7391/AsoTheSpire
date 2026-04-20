@@ -125,6 +125,7 @@ function initBattle(gameState) {
   gameState.phase = "selecting";
   gameState.selectedCards = new Map();
   gameState.readyPlayers = new Set();
+  gameState.rewardSelected = new Set();
 }
 
 /**

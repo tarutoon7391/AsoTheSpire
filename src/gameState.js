@@ -36,6 +36,9 @@ class GameState {
 
     // 準備完了したsocketIdの集合
     this.readyPlayers = new Set();
+
+    // 報酬カードを選択済みのsocketIdの集合
+    this.rewardSelected = new Set();
   }
 
   /**
@@ -123,6 +126,7 @@ class GameState {
     this.players.delete(socketId);
     this.selectedCards.delete(socketId);
     this.readyPlayers.delete(socketId);
+    this.rewardSelected.delete(socketId);
   }
 
   /**

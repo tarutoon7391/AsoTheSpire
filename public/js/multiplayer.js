@@ -263,6 +263,12 @@
             c.classList.remove("selected");
           });
         }
+        // ENEMY TURN と対になる YOUR TURN アナウンスを表示する。
+        // ただし初回ロード（prevPhase === null）では選択中フェーズへの遷移ではなく
+        // 単なる状態同期なので表示しない。
+        if (prevPhase !== null) {
+          window.showAnnouncement?.("YOUR TURN", "player");
+        }
       }
     } else if (gameState.phase === "enemy_turn") {
       // 敵ターン開始時に ENEMY TURN アナウンスを表示する

@@ -103,6 +103,13 @@
           if (endTurnSent) {
             return;
           }
+          // 同じカードに対する高速な連続クリック（ダブルクリック等）による
+          // select_card の二重送信を抑止する。送信時に .selected を付与しているので、
+          // サーバーからの game_state_update で手札が再描画されるまでは
+          // この .selected が残っており、再送をブロックできる。
+          if (card.classList.contains("selected")) {
+            return;
+          }
           // data-hand-key の形式は "${index}-${cardId}-${u|n}" なので 2番目の要素がカードID
           var key = card.dataset.handKey || "";
           var parts = key.split("-");
@@ -129,9 +136,12 @@
       var session = loadMultiSession();
       if (session.roomId && session.playerName) {
         joinRoom(session.roomId, session.playerName);
+        // サーバーへ battle_start イベントを送信してサーバー側でゲームに接続する。
+        // セッション情報が無い（直接 game.html?mode=multi を開いた）場合は
+        // ルーム未指定のまま battle_start を投げないようスキップする
+        // （無効な空 roomId 送信を防止）。
+        startBattle();
       }
-      // サーバーへ battle_start イベントを送信してサーバー側でゲームに接続する
-      startBattle();
       // クライアント側の初期表示（手札・山札・敵HP等）を初期化するために
       // ソロのsetupBattle()相当の処理も呼び出す
       if (window.BattleAPI && typeof window.BattleAPI.startBattle === "function") {
@@ -181,8 +191,20 @@
     // ここでリセットせずに render() を先に呼ぶと、enemy_turn → selecting の遷移直後に
     // カードがすべて「ターン終了済み」のまま描画され、次の game_state_update が来るまで
     // 操作不能になる（バグの主因）。
-    if (gameState.phase === "selecting" && prevPhase !== "selecting") {
-      endTurnSent = false;
+    //
+    // また、ページリロード等で再接続したクライアントは endTurnSent が初期値 false で
+    // 復帰するため、サーバー側 readyPlayers に自分の socket.id が含まれている場合は
+    // endTurnSent を true に同期して、ターン終了ボタンを誤って再活性化させないようにする。
+    var iAmReady = Array.isArray(gameState.readyPlayers) &&
+      gameState.readyPlayers.indexOf(socket.id) !== -1;
+    if (gameState.phase === "selecting") {
+      if (iAmReady) {
+        // サーバー上はすでにターン終了宣言済み → 再接続後でも待機状態に揃える
+        endTurnSent = true;
+      } else if (prevPhase !== "selecting") {
+        // 新しいターンの開始（enemy_turn / resolving / null から selecting への遷移）
+        endTurnSent = false;
+      }
     }
 
     // multi-players-panel に全プレイヤーの HP・ブロックを表示する
@@ -264,7 +286,9 @@
       // 同じ selecting フェーズ内（例：他プレイヤーがカード使用しただけの更新）では
       // ボタン状態を変更しない。
       // ※ endTurnSent のリセット自体はハンドラ冒頭で render() 前に済ませてある。
-      if (prevPhase !== "selecting") {
+      // 再接続直後など、サーバーで自分が既に readyPlayers に入っている場合は
+      // 「待機中」状態に揃えるためボタンを活性化しない。
+      if (prevPhase !== "selecting" && !iAmReady) {
         if (endTurnBtn) {
           endTurnBtn.disabled = false;
           endTurnBtn.textContent = "ターン終了";
@@ -276,6 +300,9 @@
             c.classList.remove("selected");
           });
         }
+      } else if (iAmReady && endTurnBtn) {
+        // サーバー上は既にターン終了宣言済みなのでボタンは非活性のままにする
+        endTurnBtn.disabled = true;
       }
       // ENEMY TURN と対になる YOUR TURN アナウンスを表示する。
       // enemy_turn → selecting の遷移タイミングでのみ表示する。

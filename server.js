@@ -258,32 +258,9 @@ io.on("connection", (socket) => {
     }
   });
 
-  // player_ready イベント：プレイヤーが準備完了を宣言する
-  // 全員揃ったらphaseを'resolving'にしてgame_state_updateをブロードキャストする
-  // payload: { roomId: string }
-  socket.on("player_ready", (payload) => {
-    const roomId = String(payload?.roomId || "").trim();
-    const gs = gameStates.get(roomId);
-
-    if (!gs) {
-      return;
-    }
-
-    const allReady = playerReady(gs, socket.id);
-
-    if (allReady) {
-      // まず resolving フェーズをブロードキャストして全クライアントに通知する
-      gs.phase = "resolving";
-      io.to(roomId).emit("game_state_update", gs.toJSON());
-      console.log(`ルーム ${roomId} の全員が準備完了 → resolving フェーズへ`);
-
-      // カード効果を一括解決してフェーズを更新する
-      resolveCards(gs);
-      console.log(`ルーム ${roomId} の resolveCards 完了 → ${gs.phase} フェーズへ`);
-    }
-
-    io.to(roomId).emit("game_state_update", gs.toJSON());
-  });
+  // player_ready イベントは現在どのクライアントからも emit されないため
+  // ハンドラを撤去した（誤って起動しても enemyAttack を呼ばず、
+  // ターンが永久停止する潜在リスクがあった）。ターン終了は end_turn 経由で行う。
 
   // end_turn イベント：プレイヤーがターン終了を宣言する
   // 全員揃ったら resolveCards → game_state_update(enemy_turn) → 1000ms待機 → enemyAttack を実行する

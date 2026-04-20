@@ -81,15 +81,27 @@ io.on("connection", (socket) => {
         io.to(roomId).emit("room_update", roomView);
       }
 
-      // ゲーム状態からも該当プレイヤーを削除する
+      // ゲーム状態の扱い：
+      //   - 待機中(waiting) または 終了済み(finished) の場合のみプレイヤーをgsからも削除し、
+      //     プレイヤーが0人になったらgameStateを破棄する。
+      //   - ゲーム進行中はプレイヤーデータを保持しつつ「切断中」フラグを立てる。
+      //     リダイレクト後の再接続でsocket.idが変わってもremapPlayerで復元できるよう、
+      //     既存プレイヤーの進行データ（HP・手札・デッキ等）を保護するため。
       const gs = gameStates.get(roomId);
-      if (gs) {
+      if (!gs) {
+        return;
+      }
+      if (gs.phase === "waiting" || gs.phase === "finished") {
         gs.removePlayer(socket.id);
-        // ゲームが待機中または終了済みの場合のみgameStateを削除する
-        // 進行中のゲームはリダイレクト後の再接続に備えて状態を保持する
-        if (gs.players.size === 0 && (gs.phase === "waiting" || gs.phase === "finished")) {
+        if (gs.players.size === 0) {
           gameStates.delete(roomId);
         }
+      } else {
+        // 進行中：プレイヤーデータは残し、切断中とマークする
+        gs.markDisconnected(socket.id);
+        // 残った接続中プレイヤーで全員ターン終了済みなら、解決処理を走らせる必要があるが、
+        // ここでは状態通知のみ行う（実際の解決は end_turn ハンドラ側で処理される）
+        io.to(roomId).emit("game_state_update", gs.toJSON());
       }
     });
   });
@@ -144,7 +156,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  // select_card イベント：プレイヤーがカードを選択する
+  // select_card イベント：プレイヤーがカードを使用する（サーバー権威）
   // payload: { roomId: string, cardId: string }
   socket.on("select_card", (payload) => {
     const roomId = String(payload?.roomId || "").trim();
@@ -155,11 +167,24 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // カードを選択してエネルギーを消費する（ダメージ適用はresolveCardsで一括処理）
-    playerSelectCard(gs, socket.id, cardId);
+    // サーバー権威：カードの使用可否を検証し、合格なら効果を即時適用する。
+    // フェーズチェック・手札所持・エネルギー・ターン終了済みなどはplayerSelectCard内で検証する。
+    const result = playerSelectCard(gs, socket.id, cardId);
 
-    // カード選択後の状態（エネルギー残量等）をルーム全員にブロードキャストする
+    if (!result.success) {
+      // 不正な使用要求（マナ不足・ターン終了後・手札にない等）は無視するが、
+      // 該当プレイヤーへ最新状態を再送して画面の不整合を防ぐ
+      socket.emit("game_state_update", gs.toJSON());
+      return;
+    }
+
+    // カード使用後の状態をルーム全員にブロードキャストする
     io.to(roomId).emit("game_state_update", gs.toJSON());
+
+    // 敵がカードで撃破された場合は報酬画面開始を全員に通知する
+    if (result.enemyDefeated) {
+      io.to(roomId).emit("reward_start", { reason: "enemy_defeated" });
+    }
   });
 
   // player_ready イベント：プレイヤーが準備完了を宣言する
@@ -200,6 +225,16 @@ io.on("connection", (socket) => {
       return;
     }
 
+    // selecting以外（resolving/enemy_turn等）の end_turn は無視する
+    if (gs.phase !== "selecting") {
+      return;
+    }
+    // 切断中・存在しないプレイヤーからの end_turn は無視する
+    const playerData = gs.players.get(socket.id);
+    if (!playerData || playerData.disconnected) {
+      return;
+    }
+
     // 準備完了プレイヤーに追加する
     gs.readyPlayers.add(socket.id);
 
@@ -213,7 +248,8 @@ io.on("connection", (socket) => {
       io.to(roomId).emit("game_state_update", gs.toJSON());
       console.log(`ルーム ${roomId} の全員がターン終了 → resolving フェーズへ`);
 
-      // カード効果を解決する（phaseはenemy_turnまたはfinishedになる）
+      // ターン終了処理（ステータス効果・手札捨て札移動）を行う
+      // phaseはenemy_turnまたはfinishedになる
       resolveCards(gs);
       console.log(`ルーム ${roomId} の resolveCards 完了 → ${gs.phase} フェーズへ`);
 
@@ -229,9 +265,18 @@ io.on("connection", (socket) => {
 
       // 1000ms 待機後に敵の攻撃フェーズを実行する
       setTimeout(() => {
+        // この間に状態が破棄されている可能性があるためチェックする
+        if (!gameStates.has(roomId)) {
+          return;
+        }
         enemyAttack(gs);
         console.log(`ルーム ${roomId} の enemyAttack 完了 → ${gs.phase} フェーズへ`);
         io.to(roomId).emit("game_state_update", gs.toJSON());
+
+        // 敵の攻撃で全員死亡した場合は敗北を通知する
+        if (gs.phase === "finished") {
+          io.to(roomId).emit("defeat_start", { reason: "all_players_defeated" });
+        }
       }, 1000);
     }
   });
@@ -254,9 +299,12 @@ io.on("connection", (socket) => {
     gs.rewardSelected.add(socket.id);
 
     // 全員が報酬カードを選択したら次のバトルを開始する
-    // 現在も接続中のプレイヤー全員が選択済みかどうかを確認する
-    const allCurrentPlayersSelected = gs.players.size > 0 &&
-      Array.from(gs.players.keys()).every((id) => gs.rewardSelected.has(id));
+    // 切断中プレイヤーは除外し、接続中の全員が選択済みかどうかを確認する
+    const connectedIds = Array.from(gs.players.entries())
+      .filter(([, p]) => !p.disconnected)
+      .map(([id]) => id);
+    const allCurrentPlayersSelected = connectedIds.length > 0 &&
+      connectedIds.every((id) => gs.rewardSelected.has(id));
     if (allCurrentPlayersSelected) {
       gs.rewardSelected = new Set();
       initBattle(gs);

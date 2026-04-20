@@ -223,10 +223,17 @@
       // 山札・捨て札の枚数を反映する（render()での枚数表示に使用）。
       // ただし配列としての本来の中身はサーバーから送られてこないため、
       // 既存配列の長さだけを調整して中身（カード参照）は破壊しない。
+      // 配列が未初期化の場合に備えて null/未定義チェックを行う。
       if (typeof myPlayer.deckCount === "number") {
+        if (!Array.isArray(window.gameState.player.drawPile)) {
+          window.gameState.player.drawPile = [];
+        }
         window.gameState.player.drawPile.length = myPlayer.deckCount;
       }
       if (typeof myPlayer.discardCount === "number") {
+        if (!Array.isArray(window.gameState.player.discardPile)) {
+          window.gameState.player.discardPile = [];
+        }
         window.gameState.player.discardPile.length = myPlayer.discardCount;
       }
     }

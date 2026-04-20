@@ -263,13 +263,14 @@
             c.classList.remove("selected");
           });
         }
-        // ENEMY TURN と対になる YOUR TURN アナウンスを表示する。
-        // resolving や finished（新バトル開始等）からの遷移では表示しない。
-        // ENEMY TURN 表示の直後の selecting 復帰時のみに限定するため、
-        // prevPhase が "enemy_turn" のときに限って表示する。
-        if (prevPhase === "enemy_turn") {
-          window.showAnnouncement?.("YOUR TURN", "player");
-        }
+      }
+      // ENEMY TURN と対になる YOUR TURN アナウンスを表示する。
+      // enemy_turn → selecting の遷移タイミングでのみ表示する。
+      // enemy_turn とselectingの間に別フェーズが挟まれた場合でも
+      // prevPhaseが"selecting"に更新される前に次の更新が来る可能性があるため、
+      // endTurnSent リセットとは独立して判定する。
+      if (prevPhase === "enemy_turn") {
+        window.showAnnouncement?.("YOUR TURN", "player");
       }
     } else if (gameState.phase === "enemy_turn") {
       // 敵ターン開始時に ENEMY TURN アナウンスを表示する

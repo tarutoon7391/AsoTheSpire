@@ -63,7 +63,9 @@ function runResolveAndEnemyTurn(roomId, gs) {
   // enemy_turn フェーズをブロードキャストする（クライアントで ENEMY TURN 表示を出すため）
   io.to(roomId).emit("game_state_update", gs.toJSON());
 
-  // 1000ms 待機後に敵の攻撃フェーズを実行する
+  // 1500ms 待機後に敵の攻撃フェーズを実行する
+  // （クライアント側で enemy_turn の game_state_update を受信・処理してから
+  //  selecting に遷移するよう、余裕を持たせる）
   setTimeout(() => {
     // この間に状態が破棄・差し替えされている可能性があるためチェックする
     // （roomId が同じでも gs が新しい GameState に差し替わっている可能性があるため同一性を確認する）
@@ -82,7 +84,7 @@ function runResolveAndEnemyTurn(roomId, gs) {
     if (gs.phase === "finished") {
       io.to(roomId).emit("defeat_start", { reason: "all_players_defeated" });
     }
-  }, 1000);
+  }, 1500);
 }
 
 // Socket.io 接続処理

@@ -199,10 +199,11 @@
       window.gameState.player.hp = myPlayer.hp;
       window.gameState.player.maxHp = myPlayer.maxHp;
 
-      // バグ⑤修正: energy・block・hand・status は新ターン開始時（enemy_turn → selecting 遷移）のみ反映する。
-      // プレイヤーがまだ行動中（selecting フェーズかつターン終了前）のときは上書きしない。
+      // energy・block・hand・status の上書きは新ターン開始時またはバトル開始直後のみ行う。
+      // それ以外のタイミング（カード選択中・resolving・enemy_turn等）では上書きしない。
       var isNewTurnStart = (prevPhase === "enemy_turn" && gameState.phase === "selecting");
-      var shouldUpdatePlayerState = isNewTurnStart || (gameState.phase !== "selecting") || endTurnSent;
+      var isBattleInit = (prevPhase === null && gameState.phase === "selecting");
+      var shouldUpdatePlayerState = isNewTurnStart || isBattleInit;
       if (shouldUpdatePlayerState) {
         window.gameState.player.block = myPlayer.block;
         window.gameState.player.energy = myPlayer.energy;
@@ -233,16 +234,17 @@
     var endTurnBtn = document.getElementById("endTurnButton");
 
     if (gameState.phase === "selecting") {
-      // 直前のphaseが 'enemy_turn' のとき（＝新しいターン開始時）のみ
+      // 直前のphaseが 'enemy_turn' のとき（新ターン開始時）、または
+      // 直前のphaseが null のとき（バトル開始直後）に
       // endTurnSent をリセットしてターン終了ボタンを再活性化する。
       // それ以外の selecting 遷移（カード選択直後など）ではボタン状態を変更しない。
-      if (prevPhase === "enemy_turn") {
+      if (prevPhase === "enemy_turn" || prevPhase === null) {
         if (endTurnBtn) {
           endTurnSent = false;
           endTurnBtn.disabled = false;
           endTurnBtn.textContent = "ターン終了";
         }
-        // 新しいターン開始時のみ手札の選択状態をリセットする
+        // ターン開始時のみ手札の選択状態をリセットする
         var hand = document.getElementById("hand");
         if (hand) {
           hand.querySelectorAll(".hand-card.selected").forEach(function (c) {
@@ -398,7 +400,8 @@
     startBattle,
     sendSelectCard,
     sendEndTurn,
-    sendRewardSelected
+    sendRewardSelected,
+    isEndTurnSent: function () { return endTurnSent; }
   };
 })();
 

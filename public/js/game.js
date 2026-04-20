@@ -1035,6 +1035,13 @@ async function playCard(handIndex, cardElement) {
 // カードが現在使用可能かどうかの理由を返す
 function getCardDisabledReason(card) {
   const player = gameState.player;
+  // マルチモードのターン終了済みチェック
+  const multiParams = new URLSearchParams(window.location.search);
+  if (multiParams.get("mode") === "multi") {
+    if (window.MultiplayerAPI?.isEndTurnSent?.()) {
+      return "ターン終了済み";
+    }
+  }
   if (!isBattleActive()) {
     return "行動不可";
   }

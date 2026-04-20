@@ -172,6 +172,19 @@
       return;
     }
 
+    // ===== フェーズ遷移に伴う endTurnSent のリセットを最優先で行う =====
+    // 重要：endTurnSent のリセットは updatePlayersPanel と render() より前に
+    // 行わなければならない。なぜなら：
+    //   - updatePlayersPanel はターン終了ボタンの待機テキストを endTurnSent から決める
+    //   - render() は getCardDisabledReason 経由で endTurnSent を読み、true なら
+    //     全カードに「ターン終了済み」を表示し、クリックハンドラの登録もスキップする
+    // ここでリセットせずに render() を先に呼ぶと、enemy_turn → selecting の遷移直後に
+    // カードがすべて「ターン終了済み」のまま描画され、次の game_state_update が来るまで
+    // 操作不能になる（バグの主因）。
+    if (gameState.phase === "selecting" && prevPhase !== "selecting") {
+      endTurnSent = false;
+    }
+
     // multi-players-panel に全プレイヤーの HP・ブロックを表示する
     updatePlayersPanel(gameState);
 
@@ -247,11 +260,11 @@
     if (gameState.phase === "selecting") {
       // 直前のphaseが selecting 以外（resolving/enemy_turn/null）から selecting に
       // 遷移したタイミング（=新しいターンの開始タイミング）でのみ
-      // endTurnSent をリセットしてターン終了ボタンを再活性化する。
+      // ターン終了ボタンを再活性化する。
       // 同じ selecting フェーズ内（例：他プレイヤーがカード使用しただけの更新）では
       // ボタン状態を変更しない。
+      // ※ endTurnSent のリセット自体はハンドラ冒頭で render() 前に済ませてある。
       if (prevPhase !== "selecting") {
-        endTurnSent = false;
         if (endTurnBtn) {
           endTurnBtn.disabled = false;
           endTurnBtn.textContent = "ターン終了";

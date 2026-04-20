@@ -104,6 +104,13 @@
           });
           if (!isSelected) {
             card.classList.add("selected");
+            // data-hand-key の形式は "${index}-${cardId}-${u|n}" なので 2番目の要素がカードID
+            var key = card.dataset.handKey || "";
+            var parts = key.split("-");
+            if (parts.length >= 2) {
+              var cardId = parts[1];
+              sendSelectCard(cardId);
+            }
           }
         });
       }

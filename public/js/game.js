@@ -1112,6 +1112,8 @@ async function commitDraggedCard() {
 
   const handIndex = drag.handIndex;
   const dragElement = drag.element;
+  // マルチプレイヤー通知用にカードIDをドラッグ状態クリア前に保存する
+  const dragCardId = drag.cardId;
 
   drag.active = false;
   drag.handIndex = -1;
@@ -1134,6 +1136,9 @@ async function commitDraggedCard() {
     dragElement.style.opacity = "";
     dragElement.style.pointerEvents = "";
     render();
+  } else if (window.MultiplayerAPI && typeof window.MultiplayerAPI.sendSelectCard === "function") {
+    // マルチモード時：ドラッグでカードが発動されたことをサーバーに通知する
+    window.MultiplayerAPI.sendSelectCard(dragCardId);
   }
   dragElement.remove();
 }

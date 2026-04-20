@@ -21,6 +21,70 @@ const PORT = process.env.PORT || 3000;
 // public/ ディレクトリを静的ファイルとして配信する
 app.use(express.static(path.join(__dirname, "public")));
 
+/**
+ * 全員ターン終了が確定したルームに対し、解決サイクルを進行させる共通処理。
+ *
+ * 流れ：
+ *   1. resolving フェーズをブロードキャスト
+ *   2. resolveCards でカード効果以外のターン終了処理を実行（手札→捨て札・状態異常・一時筋力解除）
+ *   3. 敵HPが0以下なら finished をブロードキャストして reward_start を通知し終了
+ *   4. enemy_turn フェーズをブロードキャストし、1000ms 待機
+ *   5. setTimeout 内で enemyAttack を実行し selecting へ遷移
+ *
+ * ※ end_turn ハンドラと disconnect ハンドラの両方から呼び出される。
+ *    （切断によって残った接続中プレイヤー全員がターン終了済みになるケースに対応するため）
+ *
+ * @param {string} roomId
+ * @param {GameState} gs
+ */
+function runResolveAndEnemyTurn(roomId, gs) {
+  // 二重起動を防ぐためのガード：phase が selecting でなければ既に解決サイクル中
+  if (gs.phase !== "selecting") {
+    return;
+  }
+
+  // resolving フェーズをブロードキャストする
+  gs.phase = "resolving";
+  io.to(roomId).emit("game_state_update", gs.toJSON());
+  console.log(`ルーム ${roomId} の全員がターン終了 → resolving フェーズへ`);
+
+  // ターン終了処理（ステータス効果・手札捨て札移動）を行う
+  // phase は enemy_turn または finished になる
+  resolveCards(gs);
+  console.log(`ルーム ${roomId} の resolveCards 完了 → ${gs.phase} フェーズへ`);
+
+  // 敵HPが0以下（phase === 'finished'）なら報酬開始を通知して敵ターンをスキップする
+  if (gs.phase === "finished") {
+    io.to(roomId).emit("game_state_update", gs.toJSON());
+    io.to(roomId).emit("reward_start", { reason: "enemy_defeated" });
+    return;
+  }
+
+  // enemy_turn フェーズをブロードキャストする（クライアントで ENEMY TURN 表示を出すため）
+  io.to(roomId).emit("game_state_update", gs.toJSON());
+
+  // 1000ms 待機後に敵の攻撃フェーズを実行する
+  setTimeout(() => {
+    // この間に状態が破棄・差し替えされている可能性があるためチェックする
+    // （roomId が同じでも gs が新しい GameState に差し替わっている可能性があるため同一性を確認する）
+    if (gameStates.get(roomId) !== gs) {
+      return;
+    }
+    // setTimeout 中に他経路で phase が変わっている場合は二重実行を避ける
+    if (gs.phase !== "enemy_turn") {
+      return;
+    }
+    enemyAttack(gs);
+    console.log(`ルーム ${roomId} の enemyAttack 完了 → ${gs.phase} フェーズへ`);
+    io.to(roomId).emit("game_state_update", gs.toJSON());
+
+    // 敵の攻撃で全員死亡した場合は敗北を通知する
+    if (gs.phase === "finished") {
+      io.to(roomId).emit("defeat_start", { reason: "all_players_defeated" });
+    }
+  }, 1000);
+}
+
 // Socket.io 接続処理
 io.on("connection", (socket) => {
   console.log(`接続: ${socket.id}`);
@@ -99,9 +163,14 @@ io.on("connection", (socket) => {
       } else {
         // 進行中：プレイヤーデータは残し、切断中とマークする
         gs.markDisconnected(socket.id);
-        // 残った接続中プレイヤーで全員ターン終了済みなら、解決処理を走らせる必要があるが、
-        // ここでは状態通知のみ行う（実際の解決は end_turn ハンドラ側で処理される）
         io.to(roomId).emit("game_state_update", gs.toJSON());
+
+        // 切断によって「残った接続中プレイヤー全員がターン終了済み」になった場合、
+        // 解決サイクルを起動する必要がある（B1: 旧コードでは end_turn ハンドラ側でしか
+        // 起動されなかったため、切断のみで全員 ready 状態になると進行が永久停止していた）。
+        if (gs.phase === "selecting" && gs.allPlayersReady()) {
+          runResolveAndEnemyTurn(roomId, gs);
+        }
       }
     });
   });
@@ -243,41 +312,7 @@ io.on("connection", (socket) => {
 
     // 全員揃った場合に解決処理を実行する
     if (gs.allPlayersReady()) {
-      // resolving フェーズをブロードキャストする
-      gs.phase = "resolving";
-      io.to(roomId).emit("game_state_update", gs.toJSON());
-      console.log(`ルーム ${roomId} の全員がターン終了 → resolving フェーズへ`);
-
-      // ターン終了処理（ステータス効果・手札捨て札移動）を行う
-      // phaseはenemy_turnまたはfinishedになる
-      resolveCards(gs);
-      console.log(`ルーム ${roomId} の resolveCards 完了 → ${gs.phase} フェーズへ`);
-
-      // 敵HPが0以下（phase === 'finished'）なら報酬開始を通知して敵ターンをスキップする
-      if (gs.phase === "finished") {
-        io.to(roomId).emit("game_state_update", gs.toJSON());
-        io.to(roomId).emit("reward_start", { reason: "enemy_defeated" });
-        return;
-      }
-
-      // enemy_turn フェーズをブロードキャストする（クライアントでENEMY TURN表示を出すため）
-      io.to(roomId).emit("game_state_update", gs.toJSON());
-
-      // 1000ms 待機後に敵の攻撃フェーズを実行する
-      setTimeout(() => {
-        // この間に状態が破棄されている可能性があるためチェックする
-        if (!gameStates.has(roomId)) {
-          return;
-        }
-        enemyAttack(gs);
-        console.log(`ルーム ${roomId} の enemyAttack 完了 → ${gs.phase} フェーズへ`);
-        io.to(roomId).emit("game_state_update", gs.toJSON());
-
-        // 敵の攻撃で全員死亡した場合は敗北を通知する
-        if (gs.phase === "finished") {
-          io.to(roomId).emit("defeat_start", { reason: "all_players_defeated" });
-        }
-      }, 1000);
+      runResolveAndEnemyTurn(roomId, gs);
     }
   });
 

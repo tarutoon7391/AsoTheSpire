@@ -142,7 +142,15 @@ io.on("connection", (socket) => {
     playerSelectCard(gs, socket.id, cardId);
     // カード選択直後に敵HPとステータスをリアルタイムで反映してルーム全員に通知する
     applyCardToEnemy(gs, socket.id);
-    io.to(roomId).emit("game_state_update", gs.toJSON());
+
+    // 敵HPが0以下になった場合は終了フェーズへ移行して報酬開始を通知する
+    if (gs.enemy.hp <= 0 && gs.phase !== "finished") {
+      gs.phase = "finished";
+      io.to(roomId).emit("game_state_update", gs.toJSON());
+      io.to(roomId).emit("reward_start", { reason: "enemy_defeated" });
+    } else {
+      io.to(roomId).emit("game_state_update", gs.toJSON());
+    }
   });
 
   // player_ready イベント：プレイヤーが準備完了を宣言する
@@ -198,8 +206,14 @@ io.on("connection", (socket) => {
 
       // カード効果を解決する
       resolveCards(gs);
-      io.to(roomId).emit("game_state_update", gs.toJSON());
       console.log(`ルーム ${roomId} の resolveCards 完了 → ${gs.phase} フェーズへ`);
+
+      // 敵HPが0以下（phase === 'finished'）なら報酬開始を通知して敵ターンをスキップする
+      if (gs.phase === "finished" && gs.enemy.hp <= 0) {
+        io.to(roomId).emit("game_state_update", gs.toJSON());
+        io.to(roomId).emit("reward_start", { reason: "enemy_defeated" });
+        return;
+      }
 
       // 500ms 待機後に敵の攻撃フェーズを実行する
       setTimeout(() => {
@@ -207,6 +221,33 @@ io.on("connection", (socket) => {
         console.log(`ルーム ${roomId} の enemyAttack 完了 → ${gs.phase} フェーズへ`);
         io.to(roomId).emit("game_state_update", gs.toJSON());
       }, 500);
+    }
+  });
+
+  // reward_selected イベント：プレイヤーが報酬カードを選択する
+  // payload: { roomId: string, cardId: string }
+  socket.on("reward_selected", (payload) => {
+    const roomId = String(payload?.roomId || "").trim();
+    const gs = gameStates.get(roomId);
+
+    if (!gs) {
+      return;
+    }
+
+    // マイグレーション：古いゲーム状態に rewardSelected がない場合は補完する
+    if (!gs.rewardSelected) {
+      gs.rewardSelected = new Set();
+    }
+
+    gs.rewardSelected.add(socket.id);
+
+    // 全員が報酬カードを選択したら次のバトルを開始する
+    if (gs.rewardSelected.size >= gs.players.size && gs.players.size > 0) {
+      gs.rewardSelected = new Set();
+      initBattle(gs);
+      console.log(`ルーム ${roomId} の全員が報酬選択完了 → 次のバトル開始`);
+      io.to(roomId).emit("game_state_update", gs.toJSON());
+      io.to(roomId).emit("battle_start_next", {});
     }
   });
 });

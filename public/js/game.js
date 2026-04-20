@@ -810,6 +810,12 @@ function addRewardCard(cardId) {
   elements.message.textContent = "報酬獲得";
   renderDeckList();
 
+  // マルチモード時はサーバーに報酬選択を通知する
+  const isMultiMode = new URLSearchParams(window.location.search).get("mode") === "multi";
+  if (isMultiMode) {
+    window.MultiplayerAPI?.sendRewardSelected(cardId);
+  }
+
   if (typeof gameState.flow.onRewardResolved === "function") {
     gameState.flow.onRewardResolved({
       pickedCardId: cardId
@@ -863,7 +869,11 @@ function checkBattleEnd() {
       return true;
     }
 
-    showRewardSection();
+    // マルチモード時はサーバーからの reward_start イベントで報酬画面を表示するためスキップする
+    const isMultiMode = new URLSearchParams(window.location.search).get("mode") === "multi";
+    if (!isMultiMode) {
+      showRewardSection();
+    }
     return true;
   }
 
@@ -1138,6 +1148,7 @@ async function commitDraggedCard() {
     render();
   } else if (window.MultiplayerAPI && typeof window.MultiplayerAPI.sendSelectCard === "function") {
     // マルチモード時：ドラッグでカードが発動されたことをサーバーに通知する
+    // endTurnSent チェックは sendSelectCard 内部で行う
     window.MultiplayerAPI.sendSelectCard(dragCardId);
   }
   dragElement.remove();
@@ -1602,6 +1613,8 @@ function render() {
 // render・gameState を外部（multiplayer.js 等）から参照できるように公開する
 window.render = render;
 window.gameState = gameState;
+window.showRewardSection = showRewardSection;
+window.showAnnouncement = showAnnouncement;
 
 // デッキオーバーレイを開く
 function openDeckOverlay() {

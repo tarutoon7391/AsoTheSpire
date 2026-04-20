@@ -96,6 +96,22 @@
           if (!card) {
             return;
           }
+          // ターン終了済みの場合はカード選択を無効にする
+          if (endTurnSent) {
+            return;
+          }
+          // エネルギー不足の場合はカード選択を無効にする
+          var key = card.dataset.handKey || "";
+          var parts = key.split("-");
+          if (parts.length >= 2) {
+            var cardId = parts[1];
+            var cardDef = window.CARD_LIBRARY && window.CARD_LIBRARY[cardId];
+            var cost = cardDef ? (cardDef.cost || 0) : 0;
+            var currentEnergy = (window.gameState && window.gameState.player) ? (window.gameState.player.energy || 0) : 0;
+            if (currentEnergy < cost) {
+              return;
+            }
+          }
           // 同じカードをクリックしたら選択解除、別のカードをクリックしたら選択を切り替える
           var isSelected = card.classList.contains("selected");
           // すべての手札カードの selected クラスをリセットする
@@ -166,9 +182,9 @@
     // multi-players-panel に全プレイヤーの HP・ブロックを表示する
     updatePlayersPanel(gameState);
 
-    // バグ③修正: 敵情報をプレイヤー情報より先に window.gameState に反映し、
+    // 敵情報をプレイヤー情報より先に window.gameState に反映し、
     // その後にプレイヤー情報を反映してから render() を呼ぶ順序を保証する。
-    // サーバーの敵情報をソロのgameStateに反映する（先に反映する）
+    // サーバーの敵情報（hp・block・intent・status）は常に反映する
     if (gameState.enemy && window.gameState) {
       window.gameState.enemy.hp = gameState.enemy.hp;
       window.gameState.enemy.maxHp = gameState.enemy.maxHp;
@@ -179,19 +195,27 @@
     // サーバーから受け取った自分のプレイヤーデータをソロのgameStateに反映して画面を更新する
     var myPlayer = gameState.players ? gameState.players[socket.id] : null;
     if (myPlayer && window.gameState) {
+      // hp・maxHp は常に反映する
       window.gameState.player.hp = myPlayer.hp;
       window.gameState.player.maxHp = myPlayer.maxHp;
-      window.gameState.player.block = myPlayer.block;
-      window.gameState.player.energy = myPlayer.energy;
-      // 手札をサーバーのカードIDリストからオブジェクト形式に変換して反映する
-      if (Array.isArray(myPlayer.hand)) {
-        window.gameState.player.hand = myPlayer.hand.map(function (cardId) {
-          return { id: cardId, upgraded: false };
-        });
-      }
-      // ステータス効果（毒・筋力など）を反映する
-      if (myPlayer.status && typeof myPlayer.status === "object" && window.gameState.player.status) {
-        Object.assign(window.gameState.player.status, myPlayer.status);
+
+      // バグ⑤修正: energy・block・hand・status は新ターン開始時（enemy_turn → selecting 遷移）のみ反映する。
+      // プレイヤーがまだ行動中（selecting フェーズかつターン終了前）のときは上書きしない。
+      var isNewTurnStart = (prevPhase === "enemy_turn" && gameState.phase === "selecting");
+      var isNotPlayerTurn = (gameState.phase !== "selecting") || endTurnSent;
+      if (isNewTurnStart || isNotPlayerTurn) {
+        window.gameState.player.block = myPlayer.block;
+        window.gameState.player.energy = myPlayer.energy;
+        // 手札をサーバーのカードIDリストからオブジェクト形式に変換して反映する
+        if (Array.isArray(myPlayer.hand)) {
+          window.gameState.player.hand = myPlayer.hand.map(function (cardId) {
+            return { id: cardId, upgraded: false };
+          });
+        }
+        // ステータス効果（毒・筋力など）を反映する
+        if (myPlayer.status && typeof myPlayer.status === "object" && window.gameState.player.status) {
+          Object.assign(window.gameState.player.status, myPlayer.status);
+        }
       }
       // 山札・捨て札の枚数を反映する（render()での枚数表示に使用）
       if (typeof myPlayer.deckCount === "number") {
@@ -209,7 +233,7 @@
     var endTurnBtn = document.getElementById("endTurnButton");
 
     if (gameState.phase === "selecting") {
-      // バグ②修正: 直前のphaseが 'enemy_turn' のとき（＝新しいターン開始時）のみ
+      // 直前のphaseが 'enemy_turn' のとき（＝新しいターン開始時）のみ
       // endTurnSent をリセットしてターン終了ボタンを再活性化する。
       // それ以外の selecting 遷移（カード選択直後など）ではボタン状態を変更しない。
       if (prevPhase === "enemy_turn") {
@@ -226,8 +250,17 @@
           });
         }
       }
-    } else if (gameState.phase === "resolving" || gameState.phase === "enemy_turn") {
-      // 解決フェーズ・敵ターン: ターン終了ボタンを非活性にする
+    } else if (gameState.phase === "enemy_turn") {
+      // バグ④修正: 敵ターン開始時に ENEMY TURN アナウンスを表示する
+      if (prevPhase !== "enemy_turn") {
+        window.showAnnouncement?.("ENEMY TURN", "enemy");
+      }
+      // ターン終了ボタンを非活性にする
+      if (endTurnBtn) {
+        endTurnBtn.disabled = true;
+      }
+    } else if (gameState.phase === "resolving") {
+      // 解決フェーズ: ターン終了ボタンを非活性にする
       if (endTurnBtn) {
         endTurnBtn.disabled = true;
       }
@@ -322,7 +355,11 @@
   }
 
   // select_card を送信する（roomId は内部保持値を使用）
+  // ターン終了済みの場合は送信しない
   function sendSelectCard(cardId) {
+    if (endTurnSent) {
+      return;
+    }
     socket.emit("select_card", { roomId: currentRoomId, cardId: cardId });
   }
 
@@ -331,13 +368,37 @@
     socket.emit("end_turn", { roomId: currentRoomId });
   }
 
+  // reward_selected を送信する（roomId は内部保持値を使用）
+  function sendRewardSelected(cardId) {
+    socket.emit("reward_selected", { roomId: currentRoomId, cardId: cardId });
+  }
+
+  // --- reward_start 受信時の報酬画面表示 ---
+  socket.on("reward_start", function () {
+    if (!isMultiMode) {
+      return;
+    }
+    window.showRewardSection?.();
+  });
+
+  // --- battle_start_next 受信時の次バトル開始 ---
+  socket.on("battle_start_next", function () {
+    if (!isMultiMode) {
+      return;
+    }
+    if (window.BattleAPI && typeof window.BattleAPI.startBattle === "function") {
+      window.BattleAPI.startBattle(50);
+    }
+  });
+
   window.MultiplayerAPI = {
     joinRoom,
     onRoomUpdate,
     onJoinError,
     startBattle,
     sendSelectCard,
-    sendEndTurn
+    sendEndTurn,
+    sendRewardSelected
   };
 })();
 
